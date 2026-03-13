@@ -1,0 +1,8 @@
+{
+  "parent": "minecraft:block/cube_bottom_top",
+  "textures": {
+    "top": "questnpc:block/farm_up",
+    "bottom": "questnpc:block/farm_down",
+    "side": "questnpc:block/farm_svuz"
+  }
+}

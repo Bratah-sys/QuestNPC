@@ -1,0 +1,287 @@
+package com.questnpc.entity;
+
+import com.questnpc.QuestNPCLogger;
+import com.questnpc.block.ModBlocks;
+import com.questnpc.entity.ai.BindToBlockGoal;
+import com.questnpc.entity.ai.BoundedStrollGoal;
+import com.questnpc.network.ModNetwork;
+import com.questnpc.network.PathSyncPacket;
+import net.minecraft.core.BlockPos;
+import net.minecraft.nbt.CompoundTag;
+import net.minecraft.network.syncher.EntityDataAccessor;
+import net.minecraft.network.syncher.EntityDataSerializers;
+import net.minecraft.network.syncher.SynchedEntityData;
+import net.minecraft.server.level.ServerLevel;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.PathfinderMob;
+import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
+import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.entity.ai.goal.FloatGoal;
+import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
+import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
+import net.minecraft.world.level.pathfinder.Path;
+import net.minecraft.world.entity.player.Player;
+import net.minecraft.world.level.Level;
+import net.minecraft.world.phys.Vec3;
+import net.minecraftforge.network.PacketDistributor;
+
+import javax.annotation.Nullable;
+import java.util.ArrayList;
+import java.util.Collections;
+import java.util.List;
+import java.util.Optional;
+
+/**
+ * Квестовый NPC — PathfinderMob с привязкой к farmnpc_block и патрулированием.
+ */
+public class QuestNPCEntity extends PathfinderMob {
+
+    /** Радиус патруля вокруг привязанного блока. */
+    public static final int PATROL_RADIUS = 16;
+    /** Радиус поиска farmnpc_block при отсутствии привязки. */
+    public static final int SEARCH_RADIUS = 32;
+
+    // --- Клиентское хранение узлов навигационного пути (заполняется через PathSyncPacket) ---
+    private List<Vec3> clientPathNodes = Collections.emptyList();
+
+    // Серверная сторона: отслеживание смены пути для синхронизации
+    private int lastSyncedPathNodeCount = -1;
+    private int lastSyncedNextNodeIndex = -1;
+
+    // --- Синхронизированные данные (доступны на клиенте для дебаг-рендерера) ---
+
+    private static final EntityDataAccessor<Optional<BlockPos>> DATA_BOUND_BLOCK =
+            SynchedEntityData.defineId(QuestNPCEntity.class, EntityDataSerializers.OPTIONAL_BLOCK_POS);
+
+    private static final EntityDataAccessor<Optional<BlockPos>> DATA_TARGET_POS =
+            SynchedEntityData.defineId(QuestNPCEntity.class, EntityDataSerializers.OPTIONAL_BLOCK_POS);
+
+    public QuestNPCEntity(EntityType<? extends QuestNPCEntity> type, Level level) {
+        super(type, level);
+        QuestNPCLogger.debug(
+                "QuestNPCEntity создан: позиция [{}, {}, {}], dimension [{}]",
+                (int) this.getX(), (int) this.getY(), (int) this.getZ(),
+                level.dimension().location()
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // Атрибуты
+    // -------------------------------------------------------------------------
+
+    public static AttributeSupplier.Builder createAttributes() {
+        return PathfinderMob.createMobAttributes()
+                .add(Attributes.MAX_HEALTH, 20.0D)
+                .add(Attributes.MOVEMENT_SPEED, 0.35D);
+    }
+
+    // -------------------------------------------------------------------------
+    // Синхронизированные данные
+    // -------------------------------------------------------------------------
+
+    @Override
+    protected void defineSynchedData() {
+        super.defineSynchedData();
+        this.entityData.define(DATA_BOUND_BLOCK, Optional.empty());
+        this.entityData.define(DATA_TARGET_POS, Optional.empty());
+    }
+
+    // -------------------------------------------------------------------------
+    // Публичный API привязки
+    // -------------------------------------------------------------------------
+
+    @Nullable
+    public BlockPos getBoundBlockPos() {
+        return this.entityData.get(DATA_BOUND_BLOCK).orElse(null);
+    }
+
+    public boolean isBound() {
+        return this.entityData.get(DATA_BOUND_BLOCK).isPresent();
+    }
+
+    public Optional<BlockPos> getTargetPos() {
+        return this.entityData.get(DATA_TARGET_POS);
+    }
+
+    public void setTargetPos(BlockPos pos) {
+        this.entityData.set(DATA_TARGET_POS, Optional.of(pos));
+    }
+
+    private void clearBoundBlock() {
+        this.entityData.set(DATA_BOUND_BLOCK, Optional.empty());
+        this.entityData.set(DATA_TARGET_POS, Optional.empty());
+    }
+
+    public static int getPatrolRadius() {
+        return PATROL_RADIUS;
+    }
+
+    // -------------------------------------------------------------------------
+    // Синхронизация навигационного пути (сервер → клиент)
+    // -------------------------------------------------------------------------
+
+    /**
+     * Возвращает узлы пути на клиенте (заполняется через {@link PathSyncPacket}).
+     */
+    public List<Vec3> getClientPathNodes() {
+        return clientPathNodes;
+    }
+
+    /**
+     * Устанавливает узлы пути на клиенте. Вызывается из {@link PathSyncPacket#handle}.
+     */
+    public void setClientPathNodes(List<Vec3> nodes) {
+        this.clientPathNodes = nodes;
+    }
+
+    /**
+     * Проверяет на сервере, изменился ли путь, и отправляет PathSyncPacket если да.
+     * Вызывается из tick() на сервере.
+     */
+    private void syncPathToClients() {
+        Path path = this.getNavigation().getPath();
+        int nodeCount = path != null ? path.getNodeCount() : 0;
+        int nextIndex = path != null ? path.getNextNodeIndex() : 0;
+
+        // Отправляем только при смене пути
+        if (nodeCount == lastSyncedPathNodeCount && nextIndex == lastSyncedNextNodeIndex) return;
+        lastSyncedPathNodeCount = nodeCount;
+        lastSyncedNextNodeIndex = nextIndex;
+
+        List<Vec3> nodes;
+        if (path == null || nodeCount == 0) {
+            nodes = Collections.emptyList();
+        } else {
+            nodes = new ArrayList<>();
+            // Только узлы впереди NPC (от текущего до последнего)
+            for (int i = nextIndex; i < nodeCount; i++) {
+                var node = path.getNode(i);
+                // +0.5 для центрирования, +0.1 по Y чтобы линия была чуть выше земли
+                nodes.add(new Vec3(node.x + 0.5, node.y + 0.1, node.z + 0.5));
+            }
+        }
+
+        ModNetwork.INSTANCE.send(
+                PacketDistributor.TRACKING_ENTITY.with(() -> this),
+                new PathSyncPacket(this.getId(), nodes)
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // Поиск и привязка к блоку
+    // -------------------------------------------------------------------------
+
+    /**
+     * Ищет ближайший farmnpc_block в кубе SEARCH_RADIUS и привязывается к нему.
+     * Запускается из {@link BindToBlockGoal}. Выполняется только на сервере.
+     */
+    public void findAndBindToBlock() {
+        BlockPos myPos = this.blockPosition();
+        BlockPos nearest = null;
+        double nearestDistSq = Double.MAX_VALUE;
+
+        BlockPos.MutableBlockPos mutable = new BlockPos.MutableBlockPos();
+        for (int dx = -SEARCH_RADIUS; dx <= SEARCH_RADIUS; dx++) {
+            for (int dy = -SEARCH_RADIUS; dy <= SEARCH_RADIUS; dy++) {
+                for (int dz = -SEARCH_RADIUS; dz <= SEARCH_RADIUS; dz++) {
+                    mutable.set(myPos.getX() + dx, myPos.getY() + dy, myPos.getZ() + dz);
+                    if (this.level().getBlockState(mutable).is(ModBlocks.FARMNPC_BLOCK.get())) {
+                        double distSq = myPos.distSqr(mutable);
+                        if (distSq < nearestDistSq) {
+                            nearestDistSq = distSq;
+                            nearest = mutable.immutable();
+                        }
+                    }
+                }
+            }
+        }
+
+        if (nearest != null) {
+            this.entityData.set(DATA_BOUND_BLOCK, Optional.of(nearest));
+            QuestNPCLogger.info(
+                    "NPC {} привязался к farmnpc_block на [{}, {}, {}]",
+                    this.getId(), nearest.getX(), nearest.getY(), nearest.getZ()
+            );
+        }
+        // Если не найден — молчим, лог "начал поиск" уже был в BindToBlockGoal
+    }
+
+    // -------------------------------------------------------------------------
+    // ИИ-цели (pig-based)
+    // -------------------------------------------------------------------------
+
+    @Override
+    protected void registerGoals() {
+        QuestNPCLogger.debug("QuestNPCEntity.registerGoals() — регистрация ИИ-целей");
+        this.goalSelector.addGoal(0, new FloatGoal(this));
+        this.goalSelector.addGoal(1, new BindToBlockGoal(this));
+        this.goalSelector.addGoal(2, new BoundedStrollGoal(this, 0.35D));
+        this.goalSelector.addGoal(4, new LookAtPlayerGoal(this, Player.class, 6.0F));
+        this.goalSelector.addGoal(5, new RandomLookAroundGoal(this));
+    }
+
+    // -------------------------------------------------------------------------
+    // Tick — предохранитель от выхода за пределы зоны
+    // -------------------------------------------------------------------------
+
+    @Override
+    public void tick() {
+        super.tick();
+        if (this.level().isClientSide()) return;
+
+        // Синхронизация пути с клиентами для debug-визуализации
+        syncPathToClients();
+
+        if (!isBound()) return;
+
+        BlockPos center = getBoundBlockPos();
+        // 1. Блок уничтожен → сброс привязки
+        if (!this.level().getBlockState(center).is(ModBlocks.FARMNPC_BLOCK.get())) {
+            clearBoundBlock();
+            QuestNPCLogger.info("NPC {} потерял привязку, ищет новый...", this.getId());
+            return;
+        }
+
+        // 2. Ушёл слишком далеко → срочный возврат к центру
+        double limitSq = (PATROL_RADIUS * 1.5) * (PATROL_RADIUS * 1.5);
+        if (this.distanceToSqr(Vec3.atCenterOf(center)) > limitSq) {
+            this.getNavigation().moveTo(center.getX() + 0.5, center.getY(), center.getZ() + 0.5, 1.0D);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // NBT
+    // -------------------------------------------------------------------------
+
+    @Override
+    public void addAdditionalSaveData(CompoundTag tag) {
+        super.addAdditionalSaveData(tag);
+        BlockPos bound = getBoundBlockPos();
+        if (bound != null) {
+            tag.putInt("BoundBlockX", bound.getX());
+            tag.putInt("BoundBlockY", bound.getY());
+            tag.putInt("BoundBlockZ", bound.getZ());
+            QuestNPCLogger.debug(
+                    "NPC {}: сохранён привязанный блок [{}, {}, {}]",
+                    this.getId(), bound.getX(), bound.getY(), bound.getZ()
+            );
+        }
+    }
+
+    @Override
+    public void readAdditionalSaveData(CompoundTag tag) {
+        super.readAdditionalSaveData(tag);
+        if (tag.contains("BoundBlockX")) {
+            BlockPos bound = new BlockPos(
+                    tag.getInt("BoundBlockX"),
+                    tag.getInt("BoundBlockY"),
+                    tag.getInt("BoundBlockZ")
+            );
+            this.entityData.set(DATA_BOUND_BLOCK, Optional.of(bound));
+            QuestNPCLogger.debug(
+                    "NPC {}: загружен привязанный блок [{}, {}, {}]",
+                    this.getId(), bound.getX(), bound.getY(), bound.getZ()
+            );
+        }
+    }
+}

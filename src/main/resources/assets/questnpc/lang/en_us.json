@@ -1,0 +1,12 @@
+{
+  "block.questnpc.farmnpc_block": "Farmer NPC Block",
+  "creativetab.questnpc": "QuestNPC",
+  "entity.questnpc.quest_npc": "Quest NPC",
+  "item.questnpc.quest_npc_spawn_egg": "Quest NPC Spawn Egg",
+  "commands.questnpc.npc_vis.enabled": "NPC Debug Visualization: ON",
+  "commands.questnpc.npc_vis.disabled": "NPC Debug Visualization: OFF",
+  "entity.questnpc.quest_npc.bound": "Bound to block at %s",
+  "entity.questnpc.quest_npc.unbound": "No home block found",
+  "key.categories.questnpc": "QuestNPC",
+  "key.questnpc.recalculate_zone": "Recalculate NPC Zone"
+}

@@ -1,0 +1,7 @@
+{
+  "variants": {
+    "": {
+      "model": "questnpc:block/farmnpc_block"
+    }
+  }
+}

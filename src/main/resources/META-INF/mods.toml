@@ -1,0 +1,66 @@
+modLoader = "javafml"
+loaderVersion = "[47,)"
+license = "MIT"
+
+[[mods]]
+    modId = "questnpc"
+    version = "${file.jarVersion}"
+    displayName = "QuestNPC"
+    authors = "QuestNPC Team"
+    description = '''Foundation mod for QuestNPC — NPC quest system for Minecraft.'''
+
+# Minecraft
+[[dependencies.questnpc]]
+    modId = "minecraft"
+    mandatory = true
+    versionRange = "[1.20.1,1.21)"
+    ordering = "NONE"
+    side = "BOTH"
+
+# Forge
+[[dependencies.questnpc]]
+    modId = "forge"
+    mandatory = true
+    versionRange = "[47,)"
+    ordering = "NONE"
+    side = "BOTH"
+
+# Bookshelf
+[[dependencies.questnpc]]
+    modId = "bookshelf"
+    mandatory = true
+    versionRange = "[20.0.0,)"
+    ordering = "NONE"
+    side = "BOTH"
+
+# Curios API
+[[dependencies.questnpc]]
+    modId = "curios"
+    mandatory = true
+    versionRange = "[5.0,)"
+    ordering = "AFTER"
+    side = "BOTH"
+
+# GeckoLib
+[[dependencies.questnpc]]
+    modId = "geckolib"
+    mandatory = true
+    versionRange = "[4.0,)"
+    ordering = "NONE"
+    side = "BOTH"
+
+# Patchouli
+[[dependencies.questnpc]]
+    modId = "patchouli"
+    mandatory = true
+    versionRange = "[1.20.1-84,)"
+    ordering = "AFTER"
+    side = "BOTH"
+
+# Structure Gel API
+[[dependencies.questnpc]]
+    modId = "structure_gel"
+    mandatory = true
+    versionRange = "[2.16.2,)"
+    ordering = "NONE"
+    side = "BOTH"
