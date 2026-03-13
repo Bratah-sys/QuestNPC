@@ -8,5 +8,11 @@
   "entity.questnpc.quest_npc.bound": "Bound to block at %s",
   "entity.questnpc.quest_npc.unbound": "No home block found",
   "key.categories.questnpc": "QuestNPC",
-  "key.questnpc.recalculate_zone": "Recalculate NPC Zone"
+  "key.questnpc.recalculate_zone": "Recalculate NPC Zone",
+  "gui.questnpc.npc_menu.title": "Quest NPC",
+  "gui.questnpc.npc_menu.change_patrol": "Change Patrol Point",
+  "item.questnpc.patrol_change_stick": "Patrol Point Tool",
+  "message.questnpc.patrol_set": "\u00a7a[QuestNPC] Patrol point set at %s",
+  "message.questnpc.npc_not_found": "\u00a7c[QuestNPC] NPC not found",
+  "message.questnpc.patrol_stick_given": "\u00a7a[QuestNPC] Right-click on a block to set patrol point"
 }

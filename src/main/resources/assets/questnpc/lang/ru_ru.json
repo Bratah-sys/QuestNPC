@@ -8,5 +8,11 @@
   "entity.questnpc.quest_npc.bound": "Привязан к блоку на %s",
   "entity.questnpc.quest_npc.unbound": "Домашний блок не найден",
   "key.categories.questnpc": "QuestNPC",
-  "key.questnpc.recalculate_zone": "Пересчёт зоны NPC"
+  "key.questnpc.recalculate_zone": "Пересчёт зоны NPC",
+  "gui.questnpc.npc_menu.title": "Квестовый NPC",
+  "gui.questnpc.npc_menu.change_patrol": "Изменить точку патруля",
+  "item.questnpc.patrol_change_stick": "Смена точки",
+  "message.questnpc.patrol_set": "\u00a7a[QuestNPC] Точка патруля установлена на %s",
+  "message.questnpc.npc_not_found": "\u00a7c[QuestNPC] NPC не найден",
+  "message.questnpc.patrol_stick_given": "\u00a7a[QuestNPC] Нажмите ПКМ по блоку для установки точки патруля"
 }

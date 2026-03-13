@@ -1,8 +1,6 @@
 package com.questnpc.entity;
 
 import com.questnpc.QuestNPCLogger;
-import com.questnpc.block.ModBlocks;
-import com.questnpc.entity.ai.BindToBlockGoal;
 import com.questnpc.entity.ai.BoundedStrollGoal;
 import com.questnpc.network.ModNetwork;
 import com.questnpc.network.PathSyncPacket;
@@ -32,14 +30,13 @@ import java.util.List;
 import java.util.Optional;
 
 /**
- * Квестовый NPC — PathfinderMob с привязкой к farmnpc_block и патрулированием.
+ * Квестовый NPC — PathfinderMob с ручной привязкой к точке патруля.
+ * По умолчанию стоит на месте. Патруль активируется через меню (палка + спец-палка).
  */
 public class QuestNPCEntity extends PathfinderMob {
 
     /** Радиус патруля вокруг привязанного блока. */
     public static final int PATROL_RADIUS = 16;
-    /** Радиус поиска farmnpc_block при отсутствии привязки. */
-    public static final int SEARCH_RADIUS = 32;
 
     // --- Клиентское хранение узлов навигационного пути (заполняется через PathSyncPacket) ---
     private List<Vec3> clientPathNodes = Collections.emptyList();
@@ -47,6 +44,9 @@ public class QuestNPCEntity extends PathfinderMob {
     // Серверная сторона: отслеживание смены пути для синхронизации
     private int lastSyncedPathNodeCount = -1;
     private int lastSyncedNextNodeIndex = -1;
+
+    // --- Динамическая цель патруля ---
+    private BoundedStrollGoal boundedStrollGoal = null;
 
     // --- Синхронизированные данные (доступны на клиенте для дебаг-рендерера) ---
 
@@ -107,6 +107,10 @@ public class QuestNPCEntity extends PathfinderMob {
         this.entityData.set(DATA_TARGET_POS, Optional.of(pos));
     }
 
+    public void setBoundBlockPos(BlockPos pos) {
+        this.entityData.set(DATA_BOUND_BLOCK, Optional.of(pos));
+    }
+
     private void clearBoundBlock() {
         this.entityData.set(DATA_BOUND_BLOCK, Optional.empty());
         this.entityData.set(DATA_TARGET_POS, Optional.empty());
@@ -114,6 +118,36 @@ public class QuestNPCEntity extends PathfinderMob {
 
     public static int getPatrolRadius() {
         return PATROL_RADIUS;
+    }
+
+    // -------------------------------------------------------------------------
+    // Управление патрулём
+    // -------------------------------------------------------------------------
+
+    /**
+     * Активирует ИИ бродилки (BoundedStrollGoal). Вызывается при назначении точки патруля.
+     */
+    public void activatePatrol() {
+        if (boundedStrollGoal == null) {
+            boundedStrollGoal = new BoundedStrollGoal(this, 0.35D);
+            this.goalSelector.addGoal(2, boundedStrollGoal);
+            BlockPos center = getBoundBlockPos();
+            if (center != null) {
+                QuestNPCLogger.info("NPC {} активировал ИИ бродилки — центр [{}, {}, {}], радиус {}",
+                        this.getId(), center.getX(), center.getY(), center.getZ(), PATROL_RADIUS);
+            }
+        }
+    }
+
+    /**
+     * Деактивирует ИИ бродилки и останавливает навигацию.
+     */
+    public void deactivatePatrol() {
+        if (boundedStrollGoal != null) {
+            this.goalSelector.removeGoal(boundedStrollGoal);
+            boundedStrollGoal = null;
+            this.getNavigation().stop();
+        }
     }
 
     // -------------------------------------------------------------------------
@@ -168,55 +202,14 @@ public class QuestNPCEntity extends PathfinderMob {
     }
 
     // -------------------------------------------------------------------------
-    // Поиск и привязка к блоку
-    // -------------------------------------------------------------------------
-
-    /**
-     * Ищет ближайший farmnpc_block в кубе SEARCH_RADIUS и привязывается к нему.
-     * Запускается из {@link BindToBlockGoal}. Выполняется только на сервере.
-     */
-    public void findAndBindToBlock() {
-        BlockPos myPos = this.blockPosition();
-        BlockPos nearest = null;
-        double nearestDistSq = Double.MAX_VALUE;
-
-        BlockPos.MutableBlockPos mutable = new BlockPos.MutableBlockPos();
-        for (int dx = -SEARCH_RADIUS; dx <= SEARCH_RADIUS; dx++) {
-            for (int dy = -SEARCH_RADIUS; dy <= SEARCH_RADIUS; dy++) {
-                for (int dz = -SEARCH_RADIUS; dz <= SEARCH_RADIUS; dz++) {
-                    mutable.set(myPos.getX() + dx, myPos.getY() + dy, myPos.getZ() + dz);
-                    if (this.level().getBlockState(mutable).is(ModBlocks.FARMNPC_BLOCK.get())) {
-                        double distSq = myPos.distSqr(mutable);
-                        if (distSq < nearestDistSq) {
-                            nearestDistSq = distSq;
-                            nearest = mutable.immutable();
-                        }
-                    }
-                }
-            }
-        }
-
-        if (nearest != null) {
-            this.entityData.set(DATA_BOUND_BLOCK, Optional.of(nearest));
-            QuestNPCLogger.info(
-                    "NPC {} привязался к farmnpc_block на [{}, {}, {}]",
-                    this.getId(), nearest.getX(), nearest.getY(), nearest.getZ()
-            );
-        }
-        // Если не найден — молчим, лог "начал поиск" уже был в BindToBlockGoal
-    }
-
-    // -------------------------------------------------------------------------
-    // ИИ-цели (pig-based)
+    // ИИ-цели — NPC стоит на месте, патруль добавляется динамически
     // -------------------------------------------------------------------------
 
     @Override
     protected void registerGoals() {
         QuestNPCLogger.debug("QuestNPCEntity.registerGoals() — регистрация ИИ-целей");
         this.goalSelector.addGoal(0, new FloatGoal(this));
-        this.goalSelector.addGoal(1, new BindToBlockGoal(this));
-        this.goalSelector.addGoal(2, new BoundedStrollGoal(this, 0.35D));
-        this.goalSelector.addGoal(4, new LookAtPlayerGoal(this, Player.class, 6.0F));
+        this.goalSelector.addGoal(4, new LookAtPlayerGoal(this, Player.class, 8.0F));
         this.goalSelector.addGoal(5, new RandomLookAroundGoal(this));
     }
 
@@ -235,14 +228,7 @@ public class QuestNPCEntity extends PathfinderMob {
         if (!isBound()) return;
 
         BlockPos center = getBoundBlockPos();
-        // 1. Блок уничтожен → сброс привязки
-        if (!this.level().getBlockState(center).is(ModBlocks.FARMNPC_BLOCK.get())) {
-            clearBoundBlock();
-            QuestNPCLogger.info("NPC {} потерял привязку, ищет новый...", this.getId());
-            return;
-        }
-
-        // 2. Ушёл слишком далеко → срочный возврат к центру
+        // Ушёл слишком далеко → срочный возврат к центру
         double limitSq = (PATROL_RADIUS * 1.5) * (PATROL_RADIUS * 1.5);
         if (this.distanceToSqr(Vec3.atCenterOf(center)) > limitSq) {
             this.getNavigation().moveTo(center.getX() + 0.5, center.getY(), center.getZ() + 0.5, 1.0D);
@@ -282,6 +268,8 @@ public class QuestNPCEntity extends PathfinderMob {
                     "NPC {}: загружен привязанный блок [{}, {}, {}]",
                     this.getId(), bound.getX(), bound.getY(), bound.getZ()
             );
+            // Восстановление патруля после загрузки мира
+            activatePatrol();
         }
     }
 }

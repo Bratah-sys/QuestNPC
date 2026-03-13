@@ -38,6 +38,20 @@ public final class ModNetwork {
                 PathSyncPacket::decode,
                 PathSyncPacket::handle
         );
+        INSTANCE.registerMessage(
+                2,
+                OpenNPCMenuPacket.class,
+                OpenNPCMenuPacket::encode,
+                OpenNPCMenuPacket::decode,
+                OpenNPCMenuPacket::handle
+        );
+        INSTANCE.registerMessage(
+                3,
+                RequestPatrolChangePacket.class,
+                RequestPatrolChangePacket::encode,
+                RequestPatrolChangePacket::decode,
+                RequestPatrolChangePacket::handle
+        );
     }
 
     private ModNetwork() {}

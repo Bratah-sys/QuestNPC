@@ -36,9 +36,10 @@ public final class PatrolZoneCalculator {
     }
 
     /**
-     * Выполняет 3D BFS от центра (блок НАД farmnpc_block) и возвращает проходимую зону.
+     * Выполняет 3D BFS от центра патруля и возвращает проходимую зону.
+     * Центр может быть как твёрдым блоком (клик по боковой грани), так и воздухом (клик по верхней грани).
      *
-     * @param center   позиция farmnpc_block
+     * @param center   центр патруля (любой блок, назначенный игроком)
      * @param radius   радиус патруля
      * @param level    мир (клиентский)
      * @param entityId ID сущности (для логирования)
@@ -47,8 +48,8 @@ public final class PatrolZoneCalculator {
     public static ZoneData compute(BlockPos center, int radius, Level level, int entityId) {
         long startTime = System.currentTimeMillis();
 
-        // NPC стоит НА farmnpc_block, ноги на Y+1
-        BlockPos startPos = center.above();
+        // Адаптивный поиск стартовой позиции: центр может быть воздухом или твёрдым блоком
+        BlockPos startPos = findStandableNear(center, level);
         double r2 = (double) radius * radius;
         int cx = center.getX();
         int cz = center.getZ();
@@ -120,6 +121,26 @@ public final class PatrolZoneCalculator {
         }
 
         return new ZoneData(reachableList, contourEdges);
+    }
+
+    /**
+     * Находит проходимую позицию (уровень ног) рядом с центром патруля.
+     * Центр может быть воздухом (клик по верхней грани) или твёрдым блоком (клик по боковой грани).
+     * Проверяет: сам центр, блок выше, затем вниз до MAX_DROP.
+     */
+    private static BlockPos findStandableNear(BlockPos center, Level level) {
+        // 1. Центр уже проходим (клик по верхней грани → воздух на уровне ног)
+        if (isStandable(center, level)) return center;
+        // 2. Блок выше центра (клик по боковой грани → твёрдый блок, ноги выше)
+        BlockPos above = center.above();
+        if (isStandable(above, level)) return above;
+        // 3. Поиск вниз от центра (центр в воздухе без пола под ним)
+        for (int dy = -1; dy >= -MAX_DROP; dy--) {
+            BlockPos candidate = center.offset(0, dy, 0);
+            if (isStandable(candidate, level)) return candidate;
+        }
+        // Ничего не нашли — возвращаем центр (BFS просто не стартует)
+        return center;
     }
 
     /**

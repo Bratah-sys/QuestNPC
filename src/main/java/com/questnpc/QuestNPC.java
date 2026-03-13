@@ -8,6 +8,7 @@ import com.questnpc.entity.ModEntityTypes;
 import com.questnpc.entity.QuestNPCEntity;
 import com.questnpc.item.ModCreativeTabs;
 import com.questnpc.item.ModItems;
+import com.questnpc.events.NPCInteractionHandler;
 import com.questnpc.network.ModNetwork;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.RegisterCommandsEvent;
@@ -27,7 +28,7 @@ import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 public class QuestNPC {
 
     public static final String MOD_ID = "questnpc";
-    public static final String MOD_VERSION = "0.1.4-alpha";
+    public static final String MOD_VERSION = "0.2.2-alpha";
 
     public QuestNPC() {
         QuestNPCLogger.info("Инициализация мода QuestNPC v{}", MOD_VERSION);
@@ -49,6 +50,7 @@ public class QuestNPC {
 
         // Подписка на события Forge (команды, серверные события)
         MinecraftForge.EVENT_BUS.register(this);
+        MinecraftForge.EVENT_BUS.register(new NPCInteractionHandler());
 
         QuestNPCLogger.info("Конструктор QuestNPC завершён");
     }
