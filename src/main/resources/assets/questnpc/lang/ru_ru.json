@@ -23,5 +23,6 @@
   "message.questnpc.npc_not_found": "\u00a7c[QuestNPC] NPC не найден",
   "message.questnpc.patrol_stick_given": "\u00a7a[QuestNPC] Нажмите ПКМ по блоку для установки точки патруля",
   "message.questnpc.settings_applied": "\u00a7a[QuestNPC] Настройки NPC обновлены",
-  "message.questnpc.settings_invalid": "\u00a7c[QuestNPC] Недопустимые значения"
+  "message.questnpc.settings_invalid": "\u00a7c[QuestNPC] Недопустимые значения",
+  "item.questnpc.quest_book": "Книга квестов"
 }

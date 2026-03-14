@@ -25,7 +25,8 @@ public class ModCreativeTabs {
                         QuestNPCLogger.info("Добавление предметов в креатив-вкладку 'questnpc_tab'");
                         output.accept(ModBlocks.FARMNPC_BLOCK.get());
                         output.accept(ModItems.QUEST_NPC_SPAWN_EGG.get());
-                        QuestNPCLogger.info("Добавлено в вкладку: farmnpc_block, quest_npc_spawn_egg");
+                        output.accept(ModItems.QUEST_BOOK.get());
+                        QuestNPCLogger.info("Добавлено в вкладку: farmnpc_block, quest_npc_spawn_egg, quest_book");
                     })
                     .build());
 

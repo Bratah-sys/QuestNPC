@@ -20,6 +20,9 @@ public class ModItems {
     public static final RegistryObject<Item> FARMNPC_BLOCK = ITEMS.register("farmnpc_block",
             () -> new BlockItem(ModBlocks.FARMNPC_BLOCK.get(), new Item.Properties()));
 
+    public static final RegistryObject<Item> QUEST_BOOK = ITEMS.register("quest_book",
+            () -> new QuestBookItem(new Item.Properties()));
+
     /**
      * Яйцо призыва Квестового NPC с кастомной текстурой egg_farm.png.
      * Цвета (0x5C4A1E, 0x4CAF50) используются только как fallback; текстура задана в models/item/.

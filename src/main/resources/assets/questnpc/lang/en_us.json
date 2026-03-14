@@ -23,5 +23,6 @@
   "message.questnpc.npc_not_found": "\u00a7c[QuestNPC] NPC not found",
   "message.questnpc.patrol_stick_given": "\u00a7a[QuestNPC] Right-click on a block to set patrol point",
   "message.questnpc.settings_applied": "\u00a7a[QuestNPC] NPC settings updated",
-  "message.questnpc.settings_invalid": "\u00a7c[QuestNPC] Invalid values"
+  "message.questnpc.settings_invalid": "\u00a7c[QuestNPC] Invalid values",
+  "item.questnpc.quest_book": "Quest Book"
 }
