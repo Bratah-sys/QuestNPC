@@ -52,6 +52,13 @@ public final class ModNetwork {
                 RequestPatrolChangePacket::decode,
                 RequestPatrolChangePacket::handle
         );
+        INSTANCE.registerMessage(
+                4,
+                UpdateNPCSettingsPacket.class,
+                UpdateNPCSettingsPacket::encode,
+                UpdateNPCSettingsPacket::decode,
+                UpdateNPCSettingsPacket::handle
+        );
     }
 
     private ModNetwork() {}

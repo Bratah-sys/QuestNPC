@@ -1,5 +1,6 @@
 package com.questnpc.entity.ai;
 
+import com.questnpc.QuestNPCLogger;
 import com.questnpc.entity.QuestNPCEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.ai.goal.WaterAvoidingRandomStrollGoal;
@@ -11,21 +12,65 @@ import javax.annotation.Nullable;
 /**
  * Патруль NPC в пределах круга радиуса PATROL_RADIUS вокруг привязанного блока.
  * При отсутствии подходящей точки — возврат к центру.
+ * Поддерживает настраиваемый диапазон задержки между прогулками.
  */
 public class BoundedStrollGoal extends WaterAvoidingRandomStrollGoal {
 
     private final QuestNPCEntity mob;
 
-    public BoundedStrollGoal(QuestNPCEntity mob, double speedModifier) {
-        // интервал 120 тиков — дефолт WaterAvoidingRandomStrollGoal
-        super(mob, speedModifier);
+    // Диапазон задержки в тиках
+    private int delayMinTicks;
+    private int delayMaxTicks;
+
+    // Текущий кулдаун (рандомно выбирается после каждой прогулки)
+    private int cooldownTicks = 0;
+
+    public BoundedStrollGoal(QuestNPCEntity mob, int delayMinTicks, int delayMaxTicks) {
+        // speedModifier=1.0 — реальная скорость контролируется через атрибут MOVEMENT_SPEED
+        super(mob, 1.0D);
         this.mob = mob;
+        this.delayMinTicks = delayMinTicks;
+        this.delayMaxTicks = delayMaxTicks;
+        // Начальный кулдаун
+        this.cooldownTicks = rollCooldown();
+        // Отключаем стандартный interval — используем свой кулдаун
+        this.interval = 1;
     }
 
-    /** Запускаемся только при наличии привязки. */
+    /** Обновляет диапазон задержки (в тиках). */
+    public void setDelayRange(int minTicks, int maxTicks) {
+        this.delayMinTicks = minTicks;
+        this.delayMaxTicks = maxTicks;
+    }
+
+    /** Рандомный кулдаун в диапазоне [delayMinTicks, delayMaxTicks]. */
+    private int rollCooldown() {
+        if (delayMinTicks >= delayMaxTicks) return delayMinTicks;
+        int ticks = delayMinTicks + mob.getRandom().nextInt(delayMaxTicks - delayMinTicks + 1);
+        QuestNPCLogger.debug("NPC {} выбрал задержку {}с (диапазон {}-{}с)",
+                mob.getId(), ticks / 20, delayMinTicks / 20, delayMaxTicks / 20);
+        return ticks;
+    }
+
+    /** Запускаемся только при наличии привязки и после истечения кулдауна. */
     @Override
     public boolean canUse() {
-        return mob.isBound() && super.canUse();
+        if (!mob.isBound()) return false;
+
+        // Свой кулдаун вместо стандартного interval
+        if (cooldownTicks > 0) {
+            cooldownTicks--;
+            return false;
+        }
+
+        return super.canUse();
+    }
+
+    @Override
+    public void stop() {
+        super.stop();
+        // После окончания прогулки — новый рандомный кулдаун
+        this.cooldownTicks = rollCooldown();
     }
 
     /**

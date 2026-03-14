@@ -11,8 +11,17 @@
   "key.questnpc.recalculate_zone": "Recalculate NPC Zone",
   "gui.questnpc.npc_menu.title": "Quest NPC",
   "gui.questnpc.npc_menu.change_patrol": "Change Patrol Point",
+  "gui.questnpc.npc_menu.speed": "Speed:",
+  "gui.questnpc.npc_menu.speed_hint": "0.1 = slow, 0.3 = normal, 0.5 = fast",
+  "gui.questnpc.npc_menu.delay": "Patrol Delay:",
+  "gui.questnpc.npc_menu.delay_min": "Min sec",
+  "gui.questnpc.npc_menu.delay_max": "Max sec",
+  "gui.questnpc.npc_menu.delay_hint": "seconds between walks",
+  "gui.questnpc.npc_menu.apply": "Apply",
   "item.questnpc.patrol_change_stick": "Patrol Point Tool",
   "message.questnpc.patrol_set": "\u00a7a[QuestNPC] Patrol point set at %s",
   "message.questnpc.npc_not_found": "\u00a7c[QuestNPC] NPC not found",
-  "message.questnpc.patrol_stick_given": "\u00a7a[QuestNPC] Right-click on a block to set patrol point"
+  "message.questnpc.patrol_stick_given": "\u00a7a[QuestNPC] Right-click on a block to set patrol point",
+  "message.questnpc.settings_applied": "\u00a7a[QuestNPC] NPC settings updated",
+  "message.questnpc.settings_invalid": "\u00a7c[QuestNPC] Invalid values"
 }

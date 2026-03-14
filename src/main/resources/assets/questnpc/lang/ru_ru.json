@@ -11,8 +11,17 @@
   "key.questnpc.recalculate_zone": "Пересчёт зоны NPC",
   "gui.questnpc.npc_menu.title": "Квестовый NPC",
   "gui.questnpc.npc_menu.change_patrol": "Изменить точку патруля",
+  "gui.questnpc.npc_menu.speed": "Скорость:",
+  "gui.questnpc.npc_menu.speed_hint": "0.1 = медленно, 0.3 = нормально, 0.5 = быстро",
+  "gui.questnpc.npc_menu.delay": "Задержка патруля:",
+  "gui.questnpc.npc_menu.delay_min": "Мин. сек",
+  "gui.questnpc.npc_menu.delay_max": "Макс. сек",
+  "gui.questnpc.npc_menu.delay_hint": "секунды между прогулками",
+  "gui.questnpc.npc_menu.apply": "Применить",
   "item.questnpc.patrol_change_stick": "Смена точки",
   "message.questnpc.patrol_set": "\u00a7a[QuestNPC] Точка патруля установлена на %s",
   "message.questnpc.npc_not_found": "\u00a7c[QuestNPC] NPC не найден",
-  "message.questnpc.patrol_stick_given": "\u00a7a[QuestNPC] Нажмите ПКМ по блоку для установки точки патруля"
+  "message.questnpc.patrol_stick_given": "\u00a7a[QuestNPC] Нажмите ПКМ по блоку для установки точки патруля",
+  "message.questnpc.settings_applied": "\u00a7a[QuestNPC] Настройки NPC обновлены",
+  "message.questnpc.settings_invalid": "\u00a7c[QuestNPC] Недопустимые значения"
 }

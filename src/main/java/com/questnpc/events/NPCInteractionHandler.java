@@ -42,10 +42,11 @@ public class NPCInteractionHandler {
         ServerPlayer player = (ServerPlayer) event.getEntity();
         QuestNPCLogger.info("Игрок {} открыл меню NPC {}", player.getName().getString(), npc.getId());
 
-        // Отправляем S2C-пакет для открытия меню
+        // Отправляем S2C-пакет для открытия меню с текущими настройками NPC
         ModNetwork.INSTANCE.send(
                 PacketDistributor.PLAYER.with(() -> player),
-                new OpenNPCMenuPacket(npc.getId())
+                new OpenNPCMenuPacket(npc.getId(), npc.getPatrolSpeed(),
+                        npc.getPatrolDelayMin(), npc.getPatrolDelayMax())
         );
         event.setCanceled(true);
         event.setCancellationResult(InteractionResult.SUCCESS);

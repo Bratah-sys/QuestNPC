@@ -38,6 +38,11 @@ public class QuestNPCEntity extends PathfinderMob {
     /** Радиус патруля вокруг привязанного блока. */
     public static final int PATROL_RADIUS = 16;
 
+    // --- Дефолтные значения настроек ---
+    public static final double DEFAULT_PATROL_SPEED = 0.3D;
+    public static final int DEFAULT_DELAY_MIN = 3;
+    public static final int DEFAULT_DELAY_MAX = 10;
+
     // --- Клиентское хранение узлов навигационного пути (заполняется через PathSyncPacket) ---
     private List<Vec3> clientPathNodes = Collections.emptyList();
 
@@ -47,6 +52,11 @@ public class QuestNPCEntity extends PathfinderMob {
 
     // --- Динамическая цель патруля ---
     private BoundedStrollGoal boundedStrollGoal = null;
+
+    // --- Настраиваемые параметры патруля ---
+    private double patrolSpeed = DEFAULT_PATROL_SPEED;
+    private int patrolDelayMin = DEFAULT_DELAY_MIN;
+    private int patrolDelayMax = DEFAULT_DELAY_MAX;
 
     // --- Синхронизированные данные (доступны на клиенте для дебаг-рендерера) ---
 
@@ -121,6 +131,45 @@ public class QuestNPCEntity extends PathfinderMob {
     }
 
     // -------------------------------------------------------------------------
+    // Настраиваемые параметры патруля
+    // -------------------------------------------------------------------------
+
+    public double getPatrolSpeed() {
+        return patrolSpeed;
+    }
+
+    /**
+     * Устанавливает скорость патруля и применяет к атрибуту MOVEMENT_SPEED.
+     */
+    public void setPatrolSpeed(double speed) {
+        this.patrolSpeed = speed;
+        // Применяем к атрибуту — goal использует speedModifier=1.0, поэтому реальная скорость = baseValue
+        if (this.getAttribute(Attributes.MOVEMENT_SPEED) != null) {
+            this.getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(speed);
+        }
+    }
+
+    public int getPatrolDelayMin() {
+        return patrolDelayMin;
+    }
+
+    public int getPatrolDelayMax() {
+        return patrolDelayMax;
+    }
+
+    /**
+     * Устанавливает диапазон задержки перед прогулкой (в секундах).
+     * Обновляет BoundedStrollGoal если он активен.
+     */
+    public void setPatrolDelay(int minSeconds, int maxSeconds) {
+        this.patrolDelayMin = minSeconds;
+        this.patrolDelayMax = maxSeconds;
+        if (boundedStrollGoal != null) {
+            boundedStrollGoal.setDelayRange(minSeconds * 20, maxSeconds * 20);
+        }
+    }
+
+    // -------------------------------------------------------------------------
     // Управление патрулём
     // -------------------------------------------------------------------------
 
@@ -129,7 +178,8 @@ public class QuestNPCEntity extends PathfinderMob {
      */
     public void activatePatrol() {
         if (boundedStrollGoal == null) {
-            boundedStrollGoal = new BoundedStrollGoal(this, 0.35D);
+            boundedStrollGoal = new BoundedStrollGoal(this,
+                    patrolDelayMin * 20, patrolDelayMax * 20);
             this.goalSelector.addGoal(2, boundedStrollGoal);
             BlockPos center = getBoundBlockPos();
             if (center != null) {
@@ -252,11 +302,35 @@ public class QuestNPCEntity extends PathfinderMob {
                     this.getId(), bound.getX(), bound.getY(), bound.getZ()
             );
         }
+        // Настройки патруля
+        tag.putDouble("PatrolSpeed", patrolSpeed);
+        tag.putInt("PatrolDelayMin", patrolDelayMin);
+        tag.putInt("PatrolDelayMax", patrolDelayMax);
     }
 
     @Override
     public void readAdditionalSaveData(CompoundTag tag) {
         super.readAdditionalSaveData(tag);
+
+        // Настройки патруля (загружаем перед activatePatrol, чтобы goal получил правильные значения)
+        if (tag.contains("PatrolSpeed")) {
+            patrolSpeed = tag.getDouble("PatrolSpeed");
+        }
+        if (tag.contains("PatrolDelayMin")) {
+            patrolDelayMin = tag.getInt("PatrolDelayMin");
+        }
+        if (tag.contains("PatrolDelayMax")) {
+            patrolDelayMax = tag.getInt("PatrolDelayMax");
+        }
+        // Применяем скорость к атрибуту
+        if (this.getAttribute(Attributes.MOVEMENT_SPEED) != null) {
+            this.getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(patrolSpeed);
+        }
+        QuestNPCLogger.debug(
+                "NPC {}: загружены настройки из NBT: speed={}, delay={}-{}с",
+                this.getId(), patrolSpeed, patrolDelayMin, patrolDelayMax
+        );
+
         if (tag.contains("BoundBlockX")) {
             BlockPos bound = new BlockPos(
                     tag.getInt("BoundBlockX"),
