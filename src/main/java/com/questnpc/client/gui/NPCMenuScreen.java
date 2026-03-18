@@ -1,50 +1,50 @@
 package com.questnpc.client.gui;
 
-import com.questnpc.client.gui.widget.TabButton;
+import com.questnpc.QuestNPCLogger;
+import com.questnpc.client.gui.widget.DarkButton;
 import com.questnpc.entity.QuestNPCEntity;
+import com.questnpc.network.DeleteNPCPacket;
 import com.questnpc.network.ModNetwork;
-import com.questnpc.network.RequestPatrolChangePacket;
-import com.questnpc.network.UpdateNPCSettingsPacket;
+import com.questnpc.network.RenameNPCPacket;
+import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
 
 /**
- * GUI-экран меню NPC. Открывается при ПКМ палкой по QuestNPCEntity.
- * Тёмный кастомный UI с вкладками, секциями и стильным рендерингом.
+ * Двухпанельное меню NPC в тёмном стиле.
+ * Левая панель: превью модели + инфо. Правая панель: сетка кнопок-разделов.
  */
 public class NPCMenuScreen extends Screen {
 
     // ═══ Цветовая палитра ═══
-    private static final int BG_OVERLAY     = 0xC0000000;  // Затемнение за панелью
-    private static final int BG_DARK        = 0xFF1A1A2E;  // Основной фон панели
-    private static final int SECTION_BG     = 0xFF1F2937;  // Фон секций
-    private static final int BORDER         = 0xFF4A5568;  // Рамки
-    private static final int BORDER_LIGHT   = 0xFF6B7280;  // Рамка при фокусе
-    private static final int TEXT_WHITE     = 0xFFE2E8F0;  // Заголовки
-    private static final int TEXT_GRAY      = 0xFF9CA3AF;  // Подсказки
-    private static final int TEXT_DARK_GRAY = 0xFF6B7280;  // Футер
-    private static final int TEXT_CYAN      = 0xFF2DD4BF;  // Координаты
-    private static final int TEXT_RED       = 0xFFFF5555;  // Ошибки валидации
-    private static final int BTN_GREEN_BG   = 0xFF10B981;  // Кнопка "Применить"
-    private static final int BTN_GREEN_HOVER= 0xFF22C55E;  // Кнопка "Применить" hover
-    private static final int BTN_GRAY_BG    = 0xFF374151;  // Кнопка "Отмена"
-    private static final int BTN_GRAY_HOVER = 0xFF4B5563;  // Кнопка "Отмена" hover
-    private static final int BTN_OUTLINE    = 0xFF4A5568;  // Кнопка "Сменить" рамка
-    private static final int BTN_OUTLINE_HV = 0xFF6B7280;  // Кнопка "Сменить" hover
-    private static final int SECTION_TITLE  = 0xFF3B82F6;  // Заголовки секций (синий)
-    private static final int RESET_BTN_BG   = 0xFF2D3748;  // Кнопка сброса фон
-    private static final int RESET_BTN_HV   = 0xFF4A5568;  // Кнопка сброса hover
-    private static final int EDIT_BG        = 0xFF111827;  // Фон полей ввода
+    static final int BG_OVERLAY     = 0xC0000000;
+    static final int BG_DARK        = 0xFF1A1A2E;
+    static final int SECTION_BG     = 0xFF1F2937;
+    static final int BORDER         = 0xFF4A5568;
+    static final int TEXT_WHITE     = 0xFFE2E8F0;
+    static final int TEXT_GRAY      = 0xFF9CA3AF;
+    static final int TEXT_DARK_GRAY = 0xFF6B7280;
+    static final int TEXT_CYAN      = 0xFF2DD4BF;
+    static final int TEXT_RED       = 0xFFFF5555;
+    static final int EDIT_BG        = 0xFF111827;
+    static final int SECTION_TITLE  = 0xFF3B82F6;
+    static final int BTN_GREEN_BG   = 0xFF10B981;
+    static final int BTN_GREEN_HOVER= 0xFF22C55E;
+    static final int BTN_GRAY_BG    = 0xFF374151;
+    static final int BTN_GRAY_HOVER = 0xFF4B5563;
+    private static final int BTN_RED_BG     = 0xFF7F1D1D;
+    private static final int BTN_RED_HOVER  = 0xFFB91C1C;
 
-    // ═══ Размеры панели ═══
-    private static final int PANEL_WIDTH  = 280;
-    private static final int PANEL_HEIGHT = 290;
-    private static final int PADDING      = 12;
-    private static final int SECTION_PAD  = 8;
+    // ═══ Размеры ═══
+    private static final int TOTAL_WIDTH  = 420;
+    private static final int TOTAL_HEIGHT = 280;
+    private static final int LEFT_WIDTH   = 150;
+    private static final int PADDING      = 8;
 
     // ═══ Данные ═══
     private final QuestNPCEntity npc;
@@ -53,28 +53,15 @@ public class NPCMenuScreen extends Screen {
     private final int currentDelayMax;
 
     // ═══ Виджеты ═══
-    private EditBox speedField;
-    private EditBox delayMinField;
-    private EditBox delayMaxField;
-    private TabButton[] tabs;
-    private Button patrolChangeBtn;
-    private Button speedResetBtn;
-    private Button delayResetBtn;
-    private Button cancelBtn;
-    private Button applyBtn;
+    private EditBox nameField;
+    private DarkButton deleteBtn;
 
     // ═══ Состояние ═══
-    private int currentTab = 0;
-    private boolean speedValid = true;
-    private boolean delayMinValid = true;
-    private boolean delayMaxValid = true;
-    private boolean delayRangeValid = true;
-
-    // Координаты панели (вычисляются в init)
+    private boolean deleteConfirm = false;
     private int panelX, panelY;
 
     public NPCMenuScreen(QuestNPCEntity npc, double speed, int delayMin, int delayMax) {
-        super(Component.translatable("gui.questnpc.npc_menu.title"));
+        super(Component.translatable("gui.questnpc.menu.title"));
         this.npc = npc;
         this.currentSpeed = speed;
         this.currentDelayMin = delayMin;
@@ -85,189 +72,138 @@ public class NPCMenuScreen extends Screen {
     protected void init() {
         super.init();
 
-        panelX = (this.width - PANEL_WIDTH) / 2;
-        panelY = (this.height - PANEL_HEIGHT) / 2;
+        panelX = (this.width - TOTAL_WIDTH) / 2;
+        panelY = (this.height - TOTAL_HEIGHT) / 2;
 
-        int contentX = panelX + PADDING;
-        int contentW = PANEL_WIDTH - PADDING * 2;
+        int rightX = panelX + LEFT_WIDTH + 1;
+        int rightW = TOTAL_WIDTH - LEFT_WIDTH - 1;
 
-        // ═══ Вкладки ═══
-        int tabY = panelY + 38;
-        int tabW = contentW / 3;
-        tabs = new TabButton[3];
-        String[] tabKeys = {
-            "gui.questnpc.npc_menu.tab.movement",
-            "gui.questnpc.npc_menu.tab.quest",
-            "gui.questnpc.npc_menu.tab.behavior"
-        };
-        for (int i = 0; i < 3; i++) {
-            final int tabIndex = i;
-            tabs[i] = new TabButton(
-                contentX + i * tabW, tabY, tabW, 20,
-                Component.translatable(tabKeys[i]),
-                button -> switchTab(tabIndex)
-            );
-            this.addRenderableWidget(tabs[i]);
-        }
-        tabs[0].setSelected(true);
+        // ═══ Правая панель: поле имени ═══
+        int nameY = panelY + 30;
+        int nameFieldW = rightW / 2 - PADDING;
+        nameField = new EditBox(this.font, rightX + PADDING, nameY, nameFieldW, 16,
+                Component.literal("Name"));
+        nameField.setMaxLength(32);
+        String currentName = npc.hasCustomName() ? npc.getCustomName().getString() : npc.getName().getString();
+        nameField.setValue(currentName);
+        nameField.setBordered(false);
+        this.addRenderableWidget(nameField);
 
-        // ═══ Секция: Точка патруля ═══
-        int sectionStartY = tabY + 28;
-        int patrolBtnY = sectionStartY + 28;
-        patrolChangeBtn = this.addRenderableWidget(new OutlineButton(
-            contentX + contentW - 72, patrolBtnY, 62, 16,
-            Component.translatable("gui.questnpc.npc_menu.patrol_change"),
-            button -> {
-                ModNetwork.INSTANCE.sendToServer(new RequestPatrolChangePacket(npc.getId()));
-                this.onClose();
-            }
-        ));
-
-        // ═══ Секция: Скорость ═══
-        int speedSectionY = patrolBtnY + 30;
-        int speedFieldY = speedSectionY + 22;
-        int fieldHeight = 16;
-
-        speedField = new EditBox(this.font, contentX + SECTION_PAD, speedFieldY, 60, fieldHeight,
-                Component.translatable("gui.questnpc.npc_menu.speed"));
-        speedField.setMaxLength(6);
-        speedField.setValue(formatSpeed(currentSpeed));
-        speedField.setResponder(text -> validateAll());
-        speedField.setBordered(false);
-        this.addRenderableWidget(speedField);
-
-        speedResetBtn = this.addRenderableWidget(new ResetButton(
-            contentX + SECTION_PAD + 66, speedFieldY, 16, fieldHeight,
-            button -> {
-                speedField.setValue(formatSpeed(QuestNPCEntity.DEFAULT_PATROL_SPEED));
-                validateAll();
-            }
-        ));
-
-        // ═══ Секция: Задержка ═══
-        int delaySectionY = speedFieldY + fieldHeight + 30;
-        int delayFieldY = delaySectionY + 30;
-
-        delayMinField = new EditBox(this.font, contentX + SECTION_PAD, delayFieldY, 40, fieldHeight,
-                Component.translatable("gui.questnpc.npc_menu.delay_min"));
-        delayMinField.setMaxLength(3);
-        delayMinField.setValue(String.valueOf(currentDelayMin));
-        delayMinField.setResponder(text -> validateAll());
-        delayMinField.setBordered(false);
-        this.addRenderableWidget(delayMinField);
-
-        delayMaxField = new EditBox(this.font, contentX + SECTION_PAD + 62, delayFieldY, 40, fieldHeight,
-                Component.translatable("gui.questnpc.npc_menu.delay_max"));
-        delayMaxField.setMaxLength(3);
-        delayMaxField.setValue(String.valueOf(currentDelayMax));
-        delayMaxField.setResponder(text -> validateAll());
-        delayMaxField.setBordered(false);
-        this.addRenderableWidget(delayMaxField);
-
-        delayResetBtn = this.addRenderableWidget(new ResetButton(
-            contentX + SECTION_PAD + 108, delayFieldY, 16, fieldHeight,
-            button -> {
-                delayMinField.setValue(String.valueOf(QuestNPCEntity.DEFAULT_DELAY_MIN));
-                delayMaxField.setValue(String.valueOf(QuestNPCEntity.DEFAULT_DELAY_MAX));
-                validateAll();
-            }
-        ));
-
-        // ═══ Кнопки внизу ═══
-        int btnY = panelY + PANEL_HEIGHT - 36;
-        int btnW = (contentW - 8) / 2;
-
-        cancelBtn = this.addRenderableWidget(new StyledButton(
-            contentX, btnY, btnW, 20,
-            Component.translatable("gui.questnpc.npc_menu.cancel"),
-            button -> this.onClose(),
-            BTN_GRAY_BG, BTN_GRAY_HOVER, TEXT_WHITE
-        ));
-
-        applyBtn = this.addRenderableWidget(new StyledButton(
-            contentX + btnW + 8, btnY, btnW, 20,
-            Component.translatable("gui.questnpc.npc_menu.apply"),
-            button -> applySettings(),
+        // Кнопка подтверждения имени
+        this.addRenderableWidget(new DarkButton(
+            rightX + PADDING + nameFieldW + 4, nameY - 1, 18, 18,
+            Component.literal("\u2713"),
+            button -> applyName(),
             BTN_GREEN_BG, BTN_GREEN_HOVER, 0xFFFFFFFF
         ));
 
-        validateAll();
-        updateWidgetVisibility();
-    }
+        // ═══ Правая панель: сетка кнопок ═══
+        int gridStartY = nameY + 24;
+        int btnW = (rightW - PADDING * 3) / 2;
+        int btnH = 20;
+        int gap = 4;
 
-    // ═══ Переключение вкладок ═══
-    private void switchTab(int index) {
-        currentTab = index;
-        for (int i = 0; i < tabs.length; i++) {
-            tabs[i].setSelected(i == index);
+        String[][] gridButtons = {
+            {"gui.questnpc.menu.btn.import",    "gui.questnpc.menu.btn.export"},
+            {"gui.questnpc.menu.btn.actions",   "gui.questnpc.menu.btn.attributes"},
+            {"gui.questnpc.menu.btn.dialog",    "gui.questnpc.menu.btn.equipment"},
+            {"gui.questnpc.menu.btn.goals",     "gui.questnpc.menu.btn.pose"},
+            {"gui.questnpc.menu.btn.position",  "gui.questnpc.menu.btn.rotation"},
+            {"gui.questnpc.menu.btn.scale",     "gui.questnpc.menu.btn.trading"},
+        };
+
+        for (int row = 0; row < gridButtons.length; row++) {
+            int rowY = gridStartY + row * (btnH + gap);
+            for (int col = 0; col < 2; col++) {
+                int btnX = rightX + PADDING + col * (btnW + PADDING);
+                String key = gridButtons[row][col];
+
+                // Рабочие кнопки: Атрибуты и Позиция
+                Button.OnPress action;
+                if (key.equals("gui.questnpc.menu.btn.attributes")) {
+                    action = button -> Minecraft.getInstance().setScreen(
+                        new NPCAttributesScreen(npc, currentSpeed, currentDelayMin, currentDelayMax, this));
+                } else if (key.equals("gui.questnpc.menu.btn.position")) {
+                    action = button -> Minecraft.getInstance().setScreen(
+                        new NPCPositionScreen(npc, this));
+                } else {
+                    action = button -> {}; // заглушка
+                }
+
+                this.addRenderableWidget(new DarkButton(
+                    btnX, rowY, btnW, btnH,
+                    Component.translatable(key), action
+                ));
+            }
         }
-        updateWidgetVisibility();
+
+        // ═══ Левая панель: кнопки-заглушки ═══
+        int leftBtnW = LEFT_WIDTH - PADDING * 2;
+        int leftBtnY = panelY + TOTAL_HEIGHT - 60;
+        this.addRenderableWidget(new DarkButton(
+            panelX + PADDING, leftBtnY, leftBtnW, 16,
+            Component.translatable("gui.questnpc.menu.btn.change_skin"),
+            button -> {}
+        ));
+        this.addRenderableWidget(new DarkButton(
+            panelX + PADDING, leftBtnY + 20, leftBtnW, 16,
+            Component.translatable("gui.questnpc.menu.btn.change_model"),
+            button -> {}
+        ));
+
+        // ═══ Нижняя панель: утилиты ═══
+        int bottomY = panelY + TOTAL_HEIGHT - 28;
+        int bottomBtnW = (TOTAL_WIDTH - PADDING * 4) / 3;
+
+        // Копия UUID
+        this.addRenderableWidget(new DarkButton(
+            panelX + PADDING, bottomY, bottomBtnW, 20,
+            Component.translatable("gui.questnpc.menu.btn.copy_uuid"),
+            button -> {
+                String uuid = npc.getUUID().toString();
+                Minecraft.getInstance().keyboardHandler.setClipboard(uuid);
+                if (Minecraft.getInstance().player != null) {
+                    Minecraft.getInstance().player.sendSystemMessage(
+                        Component.literal("\u00a7a[QuestNPC] ")
+                            .append(Component.translatable("gui.questnpc.menu.uuid_copied")));
+                }
+                QuestNPCLogger.info("Игрок скопировал UUID NPC {}", npc.getId());
+            },
+            BTN_GREEN_BG, BTN_GREEN_HOVER, 0xFFFFFFFF
+        ));
+
+        // Возродить (заглушка)
+        this.addRenderableWidget(new DarkButton(
+            panelX + PADDING + bottomBtnW + PADDING, bottomY, bottomBtnW, 20,
+            Component.translatable("gui.questnpc.menu.btn.respawn"),
+            button -> {}
+        ));
+
+        // Удалить
+        deleteBtn = this.addRenderableWidget(new DarkButton(
+            panelX + PADDING + (bottomBtnW + PADDING) * 2, bottomY, bottomBtnW, 20,
+            Component.translatable("gui.questnpc.menu.btn.delete"),
+            button -> handleDelete(),
+            BTN_RED_BG, BTN_RED_HOVER, 0xFFFFFFFF
+        ));
     }
 
-    /** Скрыть/показать виджеты вкладки "Движение" в зависимости от currentTab. */
-    private void updateWidgetVisibility() {
-        boolean movementTab = (currentTab == 0);
-        speedField.visible = movementTab;
-        delayMinField.visible = movementTab;
-        delayMaxField.visible = movementTab;
-        patrolChangeBtn.visible = movementTab;
-        speedResetBtn.visible = movementTab;
-        delayResetBtn.visible = movementTab;
-        applyBtn.visible = movementTab;
+    // ═══ Логика переименования ═══
+    private void applyName() {
+        String name = nameField.getValue().trim();
+        if (name.isEmpty() || name.length() > 32) return;
+        ModNetwork.INSTANCE.sendToServer(new RenameNPCPacket(npc.getId(), name));
     }
 
-    // ═══ Форматирование скорости без лишних нулей ═══
-    private static String formatSpeed(double speed) {
-        String s = String.format("%.2f", speed);
-        if (s.contains(".")) {
-            s = s.replaceAll("0+$", "");
-            if (s.endsWith(".")) s += "0";
+    // ═══ Логика удаления (двойной клик) ═══
+    private void handleDelete() {
+        if (!deleteConfirm) {
+            deleteConfirm = true;
+            deleteBtn.setMessage(Component.translatable("gui.questnpc.menu.btn.delete_confirm"));
+        } else {
+            ModNetwork.INSTANCE.sendToServer(new DeleteNPCPacket(npc.getId()));
+            this.onClose();
         }
-        return s;
-    }
-
-    // ═══ Валидация всех полей ═══
-    private void validateAll() {
-        speedValid = false;
-        try {
-            double speed = Double.parseDouble(speedField.getValue());
-            speedValid = speed >= 0.05 && speed <= 1.0;
-        } catch (NumberFormatException ignored) {}
-
-        delayMinValid = false;
-        int minVal = -1;
-        try {
-            minVal = Integer.parseInt(delayMinField.getValue());
-            delayMinValid = minVal >= 1 && minVal <= 120;
-        } catch (NumberFormatException ignored) {}
-
-        delayMaxValid = false;
-        int maxVal = -1;
-        try {
-            maxVal = Integer.parseInt(delayMaxField.getValue());
-            delayMaxValid = maxVal >= 1 && maxVal <= 120;
-        } catch (NumberFormatException ignored) {}
-
-        delayRangeValid = delayMinValid && delayMaxValid && minVal <= maxVal;
-
-        speedField.setTextColor(speedValid ? 0xFFFFFF : (TEXT_RED & 0x00FFFFFF));
-        delayMinField.setTextColor(delayMinValid && delayRangeValid ? 0xFFFFFF : (TEXT_RED & 0x00FFFFFF));
-        delayMaxField.setTextColor(delayMaxValid && delayRangeValid ? 0xFFFFFF : (TEXT_RED & 0x00FFFFFF));
-    }
-
-    // ═══ Отправка настроек на сервер ═══
-    private void applySettings() {
-        validateAll();
-        if (!speedValid || !delayMinValid || !delayMaxValid || !delayRangeValid) return;
-
-        double speed = Double.parseDouble(speedField.getValue());
-        int delayMin = Integer.parseInt(delayMinField.getValue());
-        int delayMax = Integer.parseInt(delayMaxField.getValue());
-
-        ModNetwork.INSTANCE.sendToServer(
-                new UpdateNPCSettingsPacket(npc.getId(), speed, delayMin, delayMax)
-        );
-        this.onClose();
     }
 
     // ═══════════════════════════════════════════════
@@ -279,219 +215,140 @@ public class NPCMenuScreen extends Screen {
         // Затемнение фона
         g.fill(0, 0, this.width, this.height, BG_OVERLAY);
 
-        int contentX = panelX + PADDING;
-        int contentW = PANEL_WIDTH - PADDING * 2;
-
         // ═══ Основная панель ═══
-        drawPanel(g, panelX, panelY, PANEL_WIDTH, PANEL_HEIGHT);
+        drawPanel(g, panelX, panelY, TOTAL_WIDTH, TOTAL_HEIGHT);
+
+        // ═══ Разделитель между панелями ═══
+        g.fill(panelX + LEFT_WIDTH, panelY + 1, panelX + LEFT_WIDTH + 1, panelY + TOTAL_HEIGHT - 1, BORDER);
 
         // ═══ Заголовок ═══
-        g.drawCenteredString(this.font, this.title, panelX + PANEL_WIDTH / 2, panelY + 8, TEXT_WHITE & 0x00FFFFFF);
-        Component subtitle = Component.translatable("gui.questnpc.npc_menu.subtitle");
-        g.drawCenteredString(this.font, subtitle, panelX + PANEL_WIDTH / 2, panelY + 22, TEXT_GRAY & 0x00FFFFFF);
+        g.drawCenteredString(this.font, this.title, panelX + TOTAL_WIDTH / 2, panelY + 4, TEXT_WHITE & 0x00FFFFFF);
+        // UUID мелким
+        String uuidStr = "UUID: " + npc.getUUID().toString();
+        g.drawString(this.font, uuidStr, panelX + LEFT_WIDTH + PADDING, panelY + 16, TEXT_DARK_GRAY & 0x00FFFFFF, false);
 
         // ═══ Разделитель под заголовком ═══
-        g.fill(panelX + 1, panelY + 35, panelX + PANEL_WIDTH - 1, panelY + 36, BORDER);
+        g.fill(panelX + 1, panelY + 26, panelX + TOTAL_WIDTH - 1, panelY + 27, BORDER);
 
-        // ═══ Контент вкладки ═══
-        int tabY = panelY + 38;
-        if (currentTab == 0) {
-            renderMovementTab(g, contentX, contentW, tabY);
-        } else {
-            renderWipTab(g, tabY);
-        }
+        // ═══ Левая панель ═══
+        renderLeftPanel(g, mouseX, mouseY);
+
+        // ═══ Правая панель: фон поля имени ═══
+        int rightX = panelX + LEFT_WIDTH + 1;
+        int rightW = TOTAL_WIDTH - LEFT_WIDTH - 1;
+        int nameY = panelY + 30;
+        int nameFieldW = rightW / 2 - PADDING;
+        drawEditBoxBg(g, rightX + PADDING - 2, nameY - 2, nameFieldW + 4, 20, true);
+
+        // Registry ID
+        int regIdX = rightX + PADDING + nameFieldW + 26;
+        g.drawString(this.font, "entity.questnpc.quest_npc", regIdX, nameY + 4, TEXT_DARK_GRAY & 0x00FFFFFF, false);
+
+        // ═══ Разделитель нижней панели ═══
+        int bottomSepY = panelY + TOTAL_HEIGHT - 32;
+        g.fill(panelX + 1, bottomSepY, panelX + TOTAL_WIDTH - 1, bottomSepY + 1, BORDER);
 
         // ═══ Футер ═══
-        Component footer = Component.translatable("gui.questnpc.npc_menu.footer");
-        g.drawCenteredString(this.font, footer, panelX + PANEL_WIDTH / 2, panelY + PANEL_HEIGHT - 12, TEXT_DARK_GRAY & 0x00FFFFFF);
+        Component footer = Component.translatable("gui.questnpc.menu.footer");
+        g.drawCenteredString(this.font, footer, panelX + TOTAL_WIDTH / 2, panelY + TOTAL_HEIGHT - 10, TEXT_DARK_GRAY & 0x00FFFFFF);
 
-        // Рендер виджетов (кнопки, поля)
+        // Рендер виджетов
         super.render(g, mouseX, mouseY, partialTick);
     }
 
-    /** Рендер вкладки "Движение" — секции с контентом. */
-    private void renderMovementTab(GuiGraphics g, int contentX, int contentW, int tabY) {
-        // ═══ Секция: Точка патруля ═══
-        int sectionY = tabY + 28;
-        drawSection(g, contentX, sectionY, contentW, 48,
-                Component.translatable("gui.questnpc.npc_menu.patrol_point").getString());
+    /** Рендер левой панели: имя, инфо, превью модели, позиция. */
+    private void renderLeftPanel(GuiGraphics g, int mouseX, int mouseY) {
+        int lx = panelX + PADDING;
+        int ly = panelY + 30;
 
-        // Координаты привязки
+        // Имя NPC
+        String npcName = npc.hasCustomName() ? npc.getCustomName().getString() : npc.getName().getString();
+        g.drawString(this.font, npcName, lx, ly, TEXT_WHITE & 0x00FFFFFF, false);
+
+        // Инфо-блок
+        int infoY = ly + 14;
+        String noneTxt = Component.translatable("gui.questnpc.menu.none").getString();
+        g.drawString(this.font, Component.translatable("gui.questnpc.menu.owner", noneTxt),
+                lx, infoY, TEXT_GRAY & 0x00FFFFFF, false);
+
+        infoY += 11;
         BlockPos bound = npc.getBoundBlockPos();
-        int coordY = sectionY + 28;
-        if (bound != null) {
-            String coordText = "X: " + bound.getX() + "  Y: " + bound.getY() + "  Z: " + bound.getZ();
-            g.drawString(this.font, coordText, contentX + SECTION_PAD, coordY, TEXT_CYAN & 0x00FFFFFF, false);
-        } else {
-            Component notSet = Component.translatable("gui.questnpc.npc_menu.patrol_not_set");
-            g.drawString(this.font, notSet, contentX + SECTION_PAD, coordY, TEXT_GRAY & 0x00FFFFFF, false);
-        }
+        String homeStr = bound != null
+                ? bound.getX() + ", " + bound.getY() + ", " + bound.getZ()
+                : Component.translatable("gui.questnpc.menu.not_set").getString();
+        g.drawString(this.font, Component.translatable("gui.questnpc.menu.home", homeStr),
+                lx, infoY, TEXT_GRAY & 0x00FFFFFF, false);
 
-        // ═══ Секция: Скорость ═══
-        int speedSectionY = sectionY + 56;
-        drawSection(g, contentX, speedSectionY, contentW, 56,
-                Component.translatable("gui.questnpc.npc_menu.speed_section").getString());
+        infoY += 11;
+        g.drawString(this.font, Component.translatable("gui.questnpc.menu.team", noneTxt),
+                lx, infoY, TEXT_GRAY & 0x00FFFFFF, false);
 
-        // Фон поля ввода скорости
-        int speedFieldY = speedSectionY + 22;
-        drawEditBoxBackground(g, contentX + SECTION_PAD - 2, speedFieldY - 2, 64, 20, speedValid);
+        infoY += 11;
+        String hp = String.format("%.1f", npc.getHealth());
+        String maxHp = String.format("%.1f", npc.getMaxHealth());
+        g.drawString(this.font, "HP: " + hp + "/" + maxHp,
+                lx, infoY, TEXT_GRAY & 0x00FFFFFF, false);
 
-        // Подсказка
-        Component speedHint = Component.translatable("gui.questnpc.npc_menu.speed_hint");
-        g.drawString(this.font, speedHint, contentX + SECTION_PAD, speedFieldY + 20, TEXT_GRAY & 0x00FFFFFF, false);
+        // ═══ Превью модели NPC ═══
+        int previewCenterX = panelX + LEFT_WIDTH / 2;
+        int previewLeft = previewCenterX - 35;
+        int previewTop = infoY + 14;
+        int previewRight = previewCenterX + 35;
+        int previewBottom = panelY + TOTAL_HEIGHT - 80;
+        int previewSize = 40;
 
-        // ═══ Секция: Задержка ═══
-        int delaySectionY = speedFieldY + 16 + 30;
-        drawSection(g, contentX, delaySectionY, contentW, 68,
-                Component.translatable("gui.questnpc.npc_menu.delay_section").getString());
+        // Рамка превью
+        g.fill(previewLeft, previewTop, previewRight, previewBottom, SECTION_BG);
+        drawOutlineRect(g, previewLeft, previewTop, previewRight - previewLeft, previewBottom - previewTop, BORDER);
 
-        // Лейблы МИН / МАКС
-        int delayFieldY = delaySectionY + 30;
-        g.drawString(this.font, Component.translatable("gui.questnpc.npc_menu.delay_min"),
-                contentX + SECTION_PAD, delaySectionY + 18, TEXT_GRAY & 0x00FFFFFF, false);
-        g.drawString(this.font, Component.translatable("gui.questnpc.npc_menu.delay_max"),
-                contentX + SECTION_PAD + 62, delaySectionY + 18, TEXT_GRAY & 0x00FFFFFF, false);
+        // Рендер модели NPC с вращением мышкой (1.20.1 API: x, y, size, mouseX, mouseY, entity)
+        int renderX = previewCenterX;
+        int renderY = previewBottom - 5;
+        float relMouseX = renderX - mouseX;
+        float relMouseY = renderY - 30 - mouseY;
+        InventoryScreen.renderEntityInInventoryFollowsMouse(
+                g, renderX, renderY, previewSize, relMouseX, relMouseY, npc);
 
-        // Фон полей ввода задержки
-        boolean delayMinOk = delayMinValid && delayRangeValid;
-        boolean delayMaxOk = delayMaxValid && delayRangeValid;
-        drawEditBoxBackground(g, contentX + SECTION_PAD - 2, delayFieldY - 2, 44, 20, delayMinOk);
-        g.drawString(this.font, "—", contentX + SECTION_PAD + 48, delayFieldY + 2, TEXT_GRAY & 0x00FFFFFF, false);
-        drawEditBoxBackground(g, contentX + SECTION_PAD + 60, delayFieldY - 2, 44, 20, delayMaxOk);
-
-        // Подсказка
-        Component delayHint = Component.translatable("gui.questnpc.npc_menu.delay_hint");
-        g.drawString(this.font, delayHint, contentX + SECTION_PAD, delayFieldY + 20, TEXT_GRAY & 0x00FFFFFF, false);
-    }
-
-    /** Рендер заглушки "В разработке..." для неактивных вкладок. */
-    private void renderWipTab(GuiGraphics g, int tabY) {
-        Component wip = Component.translatable("gui.questnpc.npc_menu.wip");
-        int centerY = tabY + (PANEL_HEIGHT - 38 - 36) / 2;
-        g.drawCenteredString(this.font, wip, panelX + PANEL_WIDTH / 2, centerY, TEXT_GRAY & 0x00FFFFFF);
+        // Pos: текущая позиция
+        int posY = previewBottom + 4;
+        String posStr = (int) npc.getX() + ", " + (int) npc.getY() + ", " + (int) npc.getZ();
+        g.drawString(this.font, Component.translatable("gui.questnpc.menu.pos", posStr),
+                lx, posY, TEXT_CYAN & 0x00FFFFFF, false);
     }
 
     // ═══════════════════════════════════════════════
-    // ХЕЛПЕРЫ РЕНДЕРИНГА
+    // ХЕЛПЕРЫ РЕНДЕРИНГА (package-private для подэкранов)
     // ═══════════════════════════════════════════════
 
-    /** Рисует основную панель с рамкой. */
-    private static void drawPanel(GuiGraphics g, int x, int y, int w, int h) {
-        // Тень (чуть больше панели)
+    static void drawPanel(GuiGraphics g, int x, int y, int w, int h) {
         g.fill(x + 2, y + 2, x + w + 2, y + h + 2, 0x40000000);
-        // Фон
         g.fill(x, y, x + w, y + h, BG_DARK);
-        // Рамка
         drawOutlineRect(g, x, y, w, h, BORDER);
     }
 
-    /** Рисует секцию с заголовком. */
-    private void drawSection(GuiGraphics g, int x, int y, int w, int h, String title) {
-        // Фон секции
-        g.fill(x + 1, y + 1, x + w - 1, y + h - 1, SECTION_BG);
-        // Рамка секции
-        drawOutlineRect(g, x, y, w, h, BORDER);
-        // Заголовок секции — маленький текст сверху
-        g.drawString(this.font, title, x + SECTION_PAD, y + 5, SECTION_TITLE & 0x00FFFFFF, false);
-        // Линия под заголовком
-        g.fill(x + 1, y + 16, x + w - 1, y + 17, BORDER);
+    static void drawOutlineRect(GuiGraphics g, int x, int y, int w, int h, int color) {
+        g.fill(x, y, x + w, y + 1, color);
+        g.fill(x, y + h - 1, x + w, y + h, color);
+        g.fill(x, y, x + 1, y + h, color);
+        g.fill(x + w - 1, y, x + w, y + h, color);
     }
 
-    /** Рисует фон для EditBox (поскольку bordered=false). */
-    private static void drawEditBoxBackground(GuiGraphics g, int x, int y, int w, int h, boolean valid) {
+    static void drawEditBoxBg(GuiGraphics g, int x, int y, int w, int h, boolean valid) {
         g.fill(x, y, x + w, y + h, EDIT_BG);
         int borderColor = valid ? BORDER : TEXT_RED;
         drawOutlineRect(g, x, y, w, h, borderColor);
     }
 
-    /** Рисует прямоугольную рамку (1px). */
-    private static void drawOutlineRect(GuiGraphics g, int x, int y, int w, int h, int color) {
-        // Верх
-        g.fill(x, y, x + w, y + 1, color);
-        // Низ
-        g.fill(x, y + h - 1, x + w, y + h, color);
-        // Лево
-        g.fill(x, y, x + 1, y + h, color);
-        // Право
-        g.fill(x + w - 1, y, x + w, y + h, color);
+    static void drawSection(GuiGraphics g, net.minecraft.client.gui.Font font,
+                             int x, int y, int w, int h, String title) {
+        g.fill(x + 1, y + 1, x + w - 1, y + h - 1, SECTION_BG);
+        drawOutlineRect(g, x, y, w, h, BORDER);
+        g.drawString(font, title, x + 8, y + 5, SECTION_TITLE & 0x00FFFFFF, false);
+        g.fill(x + 1, y + 16, x + w - 1, y + 17, BORDER);
     }
 
     @Override
     public boolean isPauseScreen() {
         return false;
-    }
-
-    // ═══════════════════════════════════════════════
-    // КАСТОМНЫЕ КНОПКИ (внутренние классы)
-    // ═══════════════════════════════════════════════
-
-    /** Кнопка со сплошной заливкой (для "Применить" и "Отмена"). */
-    private static class StyledButton extends Button {
-        private final int bgColor;
-        private final int hoverColor;
-        private final int textColor;
-
-        StyledButton(int x, int y, int w, int h, Component text, OnPress onPress, int bg, int hover, int textColor) {
-            super(x, y, w, h, text, onPress, DEFAULT_NARRATION);
-            this.bgColor = bg;
-            this.hoverColor = hover;
-            this.textColor = textColor;
-        }
-
-        @Override
-        protected void renderWidget(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
-            int bg = this.isHoveredOrFocused() ? hoverColor : bgColor;
-            g.fill(getX(), getY(), getX() + getWidth(), getY() + getHeight(), bg);
-            drawOutlineRect(g, getX(), getY(), getWidth(), getHeight(), BORDER);
-
-            var font = net.minecraft.client.Minecraft.getInstance().font;
-            int tx = getX() + (getWidth() - font.width(getMessage())) / 2;
-            int ty = getY() + (getHeight() - 8) / 2;
-            g.drawString(font, getMessage(), tx, ty, textColor & 0x00FFFFFF, false);
-        }
-    }
-
-    /** Кнопка с рамкой без заливки (для "Сменить"). */
-    private static class OutlineButton extends Button {
-        OutlineButton(int x, int y, int w, int h, Component text, OnPress onPress) {
-            super(x, y, w, h, text, onPress, DEFAULT_NARRATION);
-        }
-
-        @Override
-        protected void renderWidget(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
-            boolean hovered = this.isHoveredOrFocused();
-            int border = hovered ? BTN_OUTLINE_HV : BTN_OUTLINE;
-            // Лёгкая заливка при hover
-            if (hovered) {
-                g.fill(getX(), getY(), getX() + getWidth(), getY() + getHeight(), 0x20FFFFFF);
-            }
-            drawOutlineRect(g, getX(), getY(), getWidth(), getHeight(), border);
-
-            var font = net.minecraft.client.Minecraft.getInstance().font;
-            int tx = getX() + (getWidth() - font.width(getMessage())) / 2;
-            int ty = getY() + (getHeight() - 8) / 2;
-            int textColor = hovered ? (TEXT_WHITE & 0x00FFFFFF) : (TEXT_GRAY & 0x00FFFFFF);
-            g.drawString(font, getMessage(), tx, ty, textColor, false);
-        }
-    }
-
-    /** Маленькая кнопка сброса [⟳]. */
-    private static class ResetButton extends Button {
-        ResetButton(int x, int y, int w, int h, OnPress onPress) {
-            super(x, y, w, h, Component.literal("\u27F3"), onPress, DEFAULT_NARRATION);
-        }
-
-        @Override
-        protected void renderWidget(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
-            int bg = this.isHoveredOrFocused() ? RESET_BTN_HV : RESET_BTN_BG;
-            g.fill(getX(), getY(), getX() + getWidth(), getY() + getHeight(), bg);
-            drawOutlineRect(g, getX(), getY(), getWidth(), getHeight(), BORDER);
-
-            var font = net.minecraft.client.Minecraft.getInstance().font;
-            int tx = getX() + (getWidth() - font.width(getMessage())) / 2;
-            int ty = getY() + (getHeight() - 8) / 2;
-            int textColor = this.isHoveredOrFocused() ? 0xFFFFFF : (TEXT_GRAY & 0x00FFFFFF);
-            g.drawString(font, getMessage(), tx, ty, textColor, false);
-        }
     }
 }
