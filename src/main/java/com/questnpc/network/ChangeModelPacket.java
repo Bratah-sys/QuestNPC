@@ -7,6 +7,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityDimensions;
 import net.minecraftforge.network.NetworkEvent;
 import net.minecraftforge.registries.ForgeRegistries;
 
@@ -46,9 +47,9 @@ public class ChangeModelPacket {
                 return;
             }
 
-            // Проверка расстояния
-            if (player.distanceToSqr(npc) > 256.0) {
-                QuestNPCLogger.warn("Игрок {} слишком далеко от NPC {} для смены модели",
+            // Проверка серверной сессии (заменяет проверку расстояния)
+            if (!NPCMenuSessionManager.getInstance().isSessionActive(player.getUUID(), packet.entityId)) {
+                QuestNPCLogger.warn("Игрок {} не имеет активной сессии для NPC {} — пакет ChangeModel отклонён",
                         player.getName().getString(), packet.entityId);
                 return;
             }
@@ -64,12 +65,15 @@ public class ChangeModelPacket {
             }
 
             String oldModel = npc.getModelEntityType();
+            EntityDimensions oldDims = npc.getCurrentDimensions();
             npc.setModelEntityType(packet.modelType);
+            EntityDimensions newDims = npc.getCurrentDimensions();
 
-            QuestNPCLogger.info("Игрок {} сменил модель NPC {}: '{}' -> '{}'",
+            QuestNPCLogger.info("Игрок {} сменил модель NPC {}: '{}' -> '{}', dimensions: {}x{} -> {}x{}",
                     player.getName().getString(), npc.getId(),
                     oldModel.isEmpty() ? "default" : oldModel,
-                    packet.modelType.isEmpty() ? "default" : packet.modelType);
+                    packet.modelType.isEmpty() ? "default" : packet.modelType,
+                    oldDims.width, oldDims.height, newDims.width, newDims.height);
 
             // Локализованное имя для сообщения
             String displayName = packet.modelType.isEmpty() ? "Default" : packet.modelType;

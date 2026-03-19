@@ -10,10 +10,14 @@ import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerLevel;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.entity.EntityDimensions;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.PathfinderMob;
+import net.minecraft.world.entity.Pose;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraft.world.entity.ai.goal.FloatGoal;
 import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
 import net.minecraft.world.entity.ai.goal.RandomLookAroundGoal;
@@ -50,6 +54,12 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity {
     public static final double DEFAULT_PATROL_SPEED = 0.3D;
     public static final int DEFAULT_DELAY_MIN = 3;
     public static final int DEFAULT_DELAY_MAX = 10;
+
+    // --- Дефолтные размеры хитбокса (как у жителя) ---
+    private static final EntityDimensions DEFAULT_DIMENSIONS = EntityDimensions.scalable(0.6F, 1.95F);
+
+    // --- Текущие размеры хитбокса (меняются при смене модели) ---
+    private EntityDimensions currentDimensions = DEFAULT_DIMENSIONS;
 
     // --- Клиентское хранение узлов навигационного пути (заполняется через PathSyncPacket) ---
     private List<Vec3> clientPathNodes = Collections.emptyList();
@@ -199,9 +209,52 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity {
 
     /**
      * Устанавливает модель NPC. Пустая строка = дефолт.
+     * Также обновляет хитбокс (dimensions) в соответствии с целевым EntityType.
      */
     public void setModelEntityType(String type) {
         this.entityData.set(DATA_MODEL_TYPE, type != null ? type : "");
+        updateDimensionsForModel(type);
+    }
+
+    /**
+     * Обновляет dimensions на основе модели. Вызывается из setModelEntityType и onSyncedDataUpdated.
+     */
+    private void updateDimensionsForModel(String modelType) {
+        EntityDimensions oldDimensions = this.currentDimensions;
+
+        if (modelType == null || modelType.isEmpty()) {
+            this.currentDimensions = DEFAULT_DIMENSIONS;
+        } else {
+            ResourceLocation rl = ResourceLocation.tryParse(modelType);
+            if (rl != null) {
+                EntityType<?> targetType = ForgeRegistries.ENTITY_TYPES.getValue(rl);
+                if (targetType != null) {
+                    this.currentDimensions = targetType.getDimensions();
+                } else {
+                    QuestNPCLogger.warn("NPC {}: не удалось получить dimensions для '{}' — fallback на дефолт",
+                            this.getId(), modelType);
+                    this.currentDimensions = DEFAULT_DIMENSIONS;
+                }
+            } else {
+                QuestNPCLogger.warn("NPC {}: невалидный ResourceLocation '{}' — fallback на дефолт",
+                        this.getId(), modelType);
+                this.currentDimensions = DEFAULT_DIMENSIONS;
+            }
+        }
+
+        this.refreshDimensions();
+
+        QuestNPCLogger.debug("NPC {}: хитбокс обновлён {}x{} -> {}x{}",
+                this.getId(),
+                oldDimensions.width, oldDimensions.height,
+                this.currentDimensions.width, this.currentDimensions.height);
+    }
+
+    /**
+     * Возвращает текущие dimensions (учитывают смену модели).
+     */
+    public EntityDimensions getCurrentDimensions() {
+        return this.currentDimensions;
     }
 
     // -------------------------------------------------------------------------
@@ -222,6 +275,30 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity {
     @Override
     public AnimatableInstanceCache getAnimatableInstanceCache() {
         return this.geoCache;
+    }
+
+    // -------------------------------------------------------------------------
+    // Динамические размеры хитбокса
+    // -------------------------------------------------------------------------
+
+    @Override
+    public EntityDimensions getDimensions(Pose pose) {
+        return this.currentDimensions;
+    }
+
+    @Override
+    protected float getStandingEyeHeight(Pose pose, EntityDimensions dimensions) {
+        // Пропорционально высоте: 85% от высоты хитбокса (аналогично большинству мобов)
+        return dimensions.height * 0.85F;
+    }
+
+    @Override
+    public void onSyncedDataUpdated(EntityDataAccessor<?> key) {
+        super.onSyncedDataUpdated(key);
+        // При изменении DATA_MODEL_TYPE на клиенте — обновляем dimensions
+        if (DATA_MODEL_TYPE.equals(key)) {
+            updateDimensionsForModel(this.entityData.get(DATA_MODEL_TYPE));
+        }
     }
 
     // -------------------------------------------------------------------------

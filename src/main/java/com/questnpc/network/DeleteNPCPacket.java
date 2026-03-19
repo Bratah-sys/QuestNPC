@@ -42,10 +42,12 @@ public class DeleteNPCPacket {
                 return;
             }
 
-            // Проверка расстояния (≤16 блоков)
+            // Проверка расстояния (≤16 блоков) — Delete остаётся деструктивной операцией
             if (player.distanceToSqr(npc) > 256.0) {
                 QuestNPCLogger.warn("Игрок {} слишком далеко от NPC {} для удаления",
                         player.getName().getString(), packet.entityId);
+                player.sendSystemMessage(Component.literal("\u00a7c[QuestNPC] ")
+                        .append(Component.translatable("message.questnpc.too_far_to_delete")));
                 return;
             }
 

@@ -10,9 +10,12 @@ import com.questnpc.item.ModCreativeTabs;
 import com.questnpc.item.ModItems;
 import com.questnpc.events.NPCInteractionHandler;
 import com.questnpc.network.ModNetwork;
+import com.questnpc.network.NPCMenuSessionManager;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.RegisterCommandsEvent;
+import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.EntityAttributeCreationEvent;
+import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
@@ -28,7 +31,7 @@ import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 public class QuestNPC {
 
     public static final String MOD_ID = "questnpc";
-    public static final String MOD_VERSION = "0.2.2-alpha";
+    public static final String MOD_VERSION = "0.3.1-alpha-menurefactor-v2.2.1";
 
     public QuestNPC() {
         QuestNPCLogger.info("Инициализация мода QuestNPC v{}", MOD_VERSION);
@@ -106,5 +109,35 @@ public class QuestNPC {
         QuestNPCLogger.info("RegisterCommandsEvent: регистрация команд");
         TestModCommand.register(event.getDispatcher());
         NpcVisCommand.register(event.getDispatcher());
+    }
+
+    // -------------------------------------------------------------------------
+    // Серверные сессии NPC-меню: очистка
+    // -------------------------------------------------------------------------
+
+    /** Счётчик тиков для периодической очистки сессий. */
+    private int sessionCleanupCounter = 0;
+
+    /**
+     * Закрывает сессию NPC-меню при выходе игрока с сервера.
+     */
+    @SubscribeEvent
+    public void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
+        NPCMenuSessionManager.getInstance().closeSession(
+                event.getEntity().getUUID(),
+                event.getEntity().getName().getString());
+    }
+
+    /**
+     * Периодическая очистка просроченных сессий (каждые ~20 секунд).
+     */
+    @SubscribeEvent
+    public void onServerTick(TickEvent.ServerTickEvent event) {
+        if (event.phase != TickEvent.Phase.END) return;
+        sessionCleanupCounter++;
+        if (sessionCleanupCounter >= NPCMenuSessionManager.CLEANUP_INTERVAL_TICKS) {
+            sessionCleanupCounter = 0;
+            NPCMenuSessionManager.getInstance().cleanupExpiredSessions();
+        }
     }
 }

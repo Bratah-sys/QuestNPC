@@ -78,5 +78,6 @@
   "gui.questnpc.catalog.from_file": "Load from File",
   "gui.questnpc.catalog.wip": "Work in Progress...",
   "gui.questnpc.catalog.no_results": "No entities found",
-  "message.questnpc.model_changed": "\u00a7a[QuestNPC] NPC model changed to %s"
+  "message.questnpc.model_changed": "\u00a7a[QuestNPC] NPC model changed to %s",
+  "message.questnpc.too_far_to_delete": "Move closer to the NPC to delete it"
 }

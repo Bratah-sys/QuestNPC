@@ -45,9 +45,9 @@ public class RenameNPCPacket {
                 return;
             }
 
-            // Проверка расстояния
-            if (player.distanceToSqr(npc) > 256.0) {
-                QuestNPCLogger.warn("Игрок {} слишком далеко от NPC {} для переименования",
+            // Проверка серверной сессии (заменяет проверку расстояния)
+            if (!NPCMenuSessionManager.getInstance().isSessionActive(player.getUUID(), packet.entityId)) {
+                QuestNPCLogger.warn("Игрок {} не имеет активной сессии для NPC {} — пакет Rename отклонён",
                         player.getName().getString(), packet.entityId);
                 return;
             }

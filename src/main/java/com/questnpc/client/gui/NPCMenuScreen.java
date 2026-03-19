@@ -4,6 +4,7 @@ import com.questnpc.QuestNPCLogger;
 import com.questnpc.client.gui.widget.DarkButton;
 import com.questnpc.entity.QuestNPCEntity;
 import com.questnpc.network.ChangeModelPacket;
+import com.questnpc.network.CloseMenuPacket;
 import com.questnpc.network.DeleteNPCPacket;
 import com.questnpc.network.ModNetwork;
 import com.questnpc.network.RenameNPCPacket;
@@ -69,6 +70,9 @@ public class NPCMenuScreen extends Screen {
     private boolean deleteConfirm = false;
     private int panelX, panelY;
 
+    /** true когда переходим на подэкран — подавляет отправку CloseMenuPacket */
+    private boolean navigatingToSubScreen = false;
+
     // ═══ Выбор модели из каталога (ожидает "Применить") ═══
     @Nullable
     private ResourceLocation pendingModelType;
@@ -96,6 +100,10 @@ public class NPCMenuScreen extends Screen {
     @Override
     protected void init() {
         super.init();
+
+        // Сброс флагов при возврате из подэкрана
+        navigatingToSubScreen = false;
+        closeSent = false;
 
         panelX = (this.width - TOTAL_WIDTH) / 2;
         panelY = (this.height - TOTAL_HEIGHT) / 2;
@@ -146,11 +154,17 @@ public class NPCMenuScreen extends Screen {
                 // Рабочие кнопки: Атрибуты и Позиция
                 Button.OnPress action;
                 if (key.equals("gui.questnpc.menu.btn.attributes")) {
-                    action = button -> Minecraft.getInstance().setScreen(
-                        new NPCAttributesScreen(npc, currentSpeed, currentDelayMin, currentDelayMax, this));
+                    action = button -> {
+                        navigatingToSubScreen = true;
+                        Minecraft.getInstance().setScreen(
+                            new NPCAttributesScreen(npc, currentSpeed, currentDelayMin, currentDelayMax, this));
+                    };
                 } else if (key.equals("gui.questnpc.menu.btn.position")) {
-                    action = button -> Minecraft.getInstance().setScreen(
-                        new NPCPositionScreen(npc, this));
+                    action = button -> {
+                        navigatingToSubScreen = true;
+                        Minecraft.getInstance().setScreen(
+                            new NPCPositionScreen(npc, this));
+                    };
                 } else {
                     action = button -> {}; // заглушка
                 }
@@ -175,6 +189,7 @@ public class NPCMenuScreen extends Screen {
             Component.translatable("gui.questnpc.menu.btn.change_model"),
             button -> {
                 // Открываем каталог моделей
+                navigatingToSubScreen = true;
                 ResourceLocation current = null;
                 if (pendingModelType != null) {
                     current = pendingModelType;
@@ -460,5 +475,28 @@ public class NPCMenuScreen extends Screen {
     @Override
     public boolean isPauseScreen() {
         return false;
+    }
+
+    // ═══ Закрытие меню — уведомляем сервер для закрытия сессии ═══
+
+    private boolean closeSent = false;
+
+    @Override
+    public void onClose() {
+        sendClosePacket();
+        super.onClose();
+    }
+
+    @Override
+    public void removed() {
+        sendClosePacket();
+        super.removed();
+    }
+
+    private void sendClosePacket() {
+        if (!closeSent && !navigatingToSubScreen) {
+            closeSent = true;
+            ModNetwork.INSTANCE.sendToServer(new CloseMenuPacket(npc.getId()));
+        }
     }
 }

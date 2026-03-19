@@ -78,5 +78,6 @@
   "gui.questnpc.catalog.from_file": "Загрузить из файла",
   "gui.questnpc.catalog.wip": "В разработке...",
   "gui.questnpc.catalog.no_results": "Существа не найдены",
-  "message.questnpc.model_changed": "\u00a7a[QuestNPC] Модель NPC изменена на %s"
+  "message.questnpc.model_changed": "\u00a7a[QuestNPC] Модель NPC изменена на %s",
+  "message.questnpc.too_far_to_delete": "Подойдите ближе к NPC для удаления"
 }

@@ -3,6 +3,7 @@ package com.questnpc.events;
 import com.questnpc.QuestNPCLogger;
 import com.questnpc.entity.QuestNPCEntity;
 import com.questnpc.network.ModNetwork;
+import com.questnpc.network.NPCMenuSessionManager;
 import com.questnpc.network.OpenNPCMenuPacket;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
@@ -41,6 +42,10 @@ public class NPCInteractionHandler {
 
         ServerPlayer player = (ServerPlayer) event.getEntity();
         QuestNPCLogger.info("Игрок {} открыл меню NPC {}", player.getName().getString(), npc.getId());
+
+        // Открываем серверную сессию для валидации C2S-пакетов
+        NPCMenuSessionManager.getInstance().openSession(
+                player.getUUID(), npc.getId(), player.getName().getString());
 
         // Отправляем S2C-пакет для открытия меню с текущими настройками NPC
         ModNetwork.INSTANCE.send(

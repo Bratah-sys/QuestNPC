@@ -55,9 +55,9 @@ public class UpdateNPCSettingsPacket {
                 return;
             }
 
-            // Проверка расстояния (не дальше 16 блоков)
-            if (player.distanceToSqr(npc) > 256.0) {
-                QuestNPCLogger.warn("Игрок {} слишком далеко от NPC {} для изменения настроек",
+            // Проверка серверной сессии (заменяет проверку расстояния)
+            if (!NPCMenuSessionManager.getInstance().isSessionActive(player.getUUID(), packet.entityId)) {
+                QuestNPCLogger.warn("Игрок {} не имеет активной сессии для NPC {} — пакет UpdateSettings отклонён",
                         player.getName().getString(), packet.entityId);
                 return;
             }
