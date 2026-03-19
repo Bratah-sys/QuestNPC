@@ -29,6 +29,7 @@ import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.registries.ForgeRegistries;
 import software.bernie.geckolib.renderer.GeoEntityRenderer;
 
+import java.lang.reflect.Field;
 import java.util.HashMap;
 import java.util.Map;
 
@@ -41,6 +42,42 @@ import java.util.Map;
  */
 @Mod.EventBusSubscriber(modid = QuestNPC.MOD_ID, bus = Mod.EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
 public class QuestNPCRenderer extends GeoEntityRenderer<QuestNPCEntity> {
+
+    // ═══ Reflection: WalkAnimationState fields (cached once) ═══
+    // WalkAnimationState has exactly 3 private float fields: speed, speedOld, position (in declaration order).
+    // We find them by type+order to avoid SRG/official name mismatch between dev and production.
+    private static final Field WALK_ANIM_SPEED;
+    private static final Field WALK_ANIM_SPEED_OLD;
+    private static final Field WALK_ANIM_POSITION;
+    private static boolean walkAnimReflectionFailed = false;
+
+    static {
+        Field speed = null, speedOld = null, position = null;
+        try {
+            Field[] allFields = net.minecraft.world.entity.WalkAnimationState.class.getDeclaredFields();
+            int floatIndex = 0;
+            for (Field f : allFields) {
+                if (f.getType() == float.class) {
+                    f.setAccessible(true);
+                    switch (floatIndex) {
+                        case 0 -> speed = f;
+                        case 1 -> speedOld = f;
+                        case 2 -> position = f;
+                    }
+                    floatIndex++;
+                }
+            }
+            if (speed == null || speedOld == null || position == null) {
+                throw new RuntimeException("Expected 3 float fields, found " + floatIndex);
+            }
+        } catch (Exception e) {
+            QuestNPCLogger.warn("WalkAnimationState reflection failed: {} — using fallback sync", e.getMessage());
+            walkAnimReflectionFailed = true;
+        }
+        WALK_ANIM_SPEED = speed;
+        WALK_ANIM_SPEED_OLD = speedOld;
+        WALK_ANIM_POSITION = position;
+    }
 
     // ═══ Ванильная модель (режим 1 — дефолт) ═══
     private static final ResourceLocation JUNGLE_TYPE_TEXTURE =
@@ -201,6 +238,11 @@ public class QuestNPCRenderer extends GeoEntityRenderer<QuestNPCEntity> {
 
     /**
      * Копирует позицию, ротацию и анимационные данные с NPC на фейковую entity.
+     * Fixes two animation bugs:
+     * 1) Vanilla mobs (zombie, skeleton): legs moved too fast because walkAnimation.update() was called
+     *    every render frame with speed=1.0. Now we copy the NPC's actual walkAnimation fields via reflection.
+     * 2) Modded mobs (GeckoLib): static T-pose because fake entity had no movement data.
+     *    Now we copy deltaMovement, xOld/yOld/zOld, walkDist/walkDistO so GeckoLib's isMoving() works.
      */
     private void syncFakeEntityPose(Entity fakeEntity, QuestNPCEntity npc, float partialTick) {
         fakeEntity.setPos(npc.getX(), npc.getY(), npc.getZ());
@@ -210,17 +252,42 @@ public class QuestNPCRenderer extends GeoEntityRenderer<QuestNPCEntity> {
         fakeEntity.yRotO = npc.yRotO;
         fakeEntity.tickCount = npc.tickCount;
 
+        // Copy movement data for GeckoLib isMoving() detection
+        fakeEntity.xOld = npc.xOld;
+        fakeEntity.yOld = npc.yOld;
+        fakeEntity.zOld = npc.zOld;
+        fakeEntity.setDeltaMovement(npc.getDeltaMovement());
+        fakeEntity.walkDist = npc.walkDist;
+        fakeEntity.walkDistO = npc.walkDistO;
+        fakeEntity.moveDist = npc.moveDist;
+
         if (fakeEntity instanceof LivingEntity fakeLiving) {
             fakeLiving.yBodyRot = npc.yBodyRot;
             fakeLiving.yBodyRotO = npc.yBodyRotO;
             fakeLiving.yHeadRot = npc.yHeadRot;
             fakeLiving.yHeadRotO = npc.yHeadRotO;
-            fakeLiving.walkAnimation.update(
-                    npc.walkAnimation.isMoving() ? 1.0F : 0.0F,
-                    0.4F
-            );
             fakeLiving.hurtTime = npc.hurtTime;
             fakeLiving.deathTime = npc.deathTime;
+
+            // Copy walkAnimation fields via reflection for correct vanilla mob leg speed
+            if (!walkAnimReflectionFailed) {
+                try {
+                    WALK_ANIM_SPEED.setFloat(fakeLiving.walkAnimation,
+                            WALK_ANIM_SPEED.getFloat(npc.walkAnimation));
+                    WALK_ANIM_SPEED_OLD.setFloat(fakeLiving.walkAnimation,
+                            WALK_ANIM_SPEED_OLD.getFloat(npc.walkAnimation));
+                    WALK_ANIM_POSITION.setFloat(fakeLiving.walkAnimation,
+                            WALK_ANIM_POSITION.getFloat(npc.walkAnimation));
+                } catch (Exception e) {
+                    // Fallback: use the old (broken) approach
+                    fakeLiving.walkAnimation.update(
+                            npc.walkAnimation.isMoving() ? 1.0F : 0.0F, 0.4F);
+                }
+            } else {
+                // Reflection unavailable — fallback
+                fakeLiving.walkAnimation.update(
+                        npc.walkAnimation.isMoving() ? 1.0F : 0.0F, 0.4F);
+            }
         }
     }
 

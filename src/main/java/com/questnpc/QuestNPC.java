@@ -31,7 +31,7 @@ import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 public class QuestNPC {
 
     public static final String MOD_ID = "questnpc";
-    public static final String MOD_VERSION = "0.3.1-alpha-menurefactor-v2.2.1";
+    public static final String MOD_VERSION = "0.3.1-alpha-menurefactor-v2.2.2";
 
     public QuestNPC() {
         QuestNPCLogger.info("Инициализация мода QuestNPC v{}", MOD_VERSION);
