@@ -46,7 +46,8 @@ public class NPCInteractionHandler {
         ModNetwork.INSTANCE.send(
                 PacketDistributor.PLAYER.with(() -> player),
                 new OpenNPCMenuPacket(npc.getId(), npc.getPatrolSpeed(),
-                        npc.getPatrolDelayMin(), npc.getPatrolDelayMax())
+                        npc.getPatrolDelayMin(), npc.getPatrolDelayMax(),
+                        npc.getModelEntityType())
         );
         event.setCanceled(true);
         event.setCancellationResult(InteractionResult.SUCCESS);

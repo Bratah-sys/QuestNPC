@@ -22,6 +22,14 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.phys.Vec3;
 import net.minecraftforge.network.PacketDistributor;
+import software.bernie.geckolib.animatable.GeoEntity;
+import software.bernie.geckolib.constant.DefaultAnimations;
+import software.bernie.geckolib.core.animatable.instance.AnimatableInstanceCache;
+import software.bernie.geckolib.core.animation.AnimatableManager;
+import software.bernie.geckolib.core.animation.AnimationController;
+import software.bernie.geckolib.core.animation.AnimationState;
+import software.bernie.geckolib.core.object.PlayState;
+import software.bernie.geckolib.util.GeckoLibUtil;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -33,7 +41,7 @@ import java.util.Optional;
  * Квестовый NPC — PathfinderMob с ручной привязкой к точке патруля.
  * По умолчанию стоит на месте. Патруль активируется через меню (палка + спец-палка).
  */
-public class QuestNPCEntity extends PathfinderMob {
+public class QuestNPCEntity extends PathfinderMob implements GeoEntity {
 
     /** Радиус патруля вокруг привязанного блока. */
     public static final int PATROL_RADIUS = 16;
@@ -57,6 +65,13 @@ public class QuestNPCEntity extends PathfinderMob {
     private double patrolSpeed = DEFAULT_PATROL_SPEED;
     private int patrolDelayMin = DEFAULT_DELAY_MIN;
     private int patrolDelayMax = DEFAULT_DELAY_MAX;
+
+    // --- GeckoLib ---
+    private final AnimatableInstanceCache geoCache = GeckoLibUtil.createInstanceCache(this);
+
+    // --- Модель NPC (пустая строка = дефолт VillagerModel, "minecraft:zombie" = зомби, и т.д.) ---
+    private static final EntityDataAccessor<String> DATA_MODEL_TYPE =
+            SynchedEntityData.defineId(QuestNPCEntity.class, EntityDataSerializers.STRING);
 
     // --- Синхронизированные данные (доступны на клиенте для дебаг-рендерера) ---
 
@@ -92,6 +107,7 @@ public class QuestNPCEntity extends PathfinderMob {
     @Override
     protected void defineSynchedData() {
         super.defineSynchedData();
+        this.entityData.define(DATA_MODEL_TYPE, "");
         this.entityData.define(DATA_BOUND_BLOCK, Optional.empty());
         this.entityData.define(DATA_TARGET_POS, Optional.empty());
     }
@@ -167,6 +183,45 @@ public class QuestNPCEntity extends PathfinderMob {
         if (boundedStrollGoal != null) {
             boundedStrollGoal.setDelayRange(minSeconds * 20, maxSeconds * 20);
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Модель NPC
+    // -------------------------------------------------------------------------
+
+    /**
+     * Возвращает ResourceLocation модели NPC как строку.
+     * Пустая строка = дефолтная модель (VillagerModel).
+     */
+    public String getModelEntityType() {
+        return this.entityData.get(DATA_MODEL_TYPE);
+    }
+
+    /**
+     * Устанавливает модель NPC. Пустая строка = дефолт.
+     */
+    public void setModelEntityType(String type) {
+        this.entityData.set(DATA_MODEL_TYPE, type != null ? type : "");
+    }
+
+    // -------------------------------------------------------------------------
+    // GeckoLib
+    // -------------------------------------------------------------------------
+
+    @Override
+    public void registerControllers(AnimatableManager.ControllerRegistrar controllers) {
+        // Контроллер движения: ходьба или idle (используется при кастомных .geo.json моделях)
+        controllers.add(new AnimationController<>(this, "Movement", 5, state -> {
+            if (state.isMoving()) {
+                return state.setAndContinue(DefaultAnimations.WALK);
+            }
+            return state.setAndContinue(DefaultAnimations.IDLE);
+        }));
+    }
+
+    @Override
+    public AnimatableInstanceCache getAnimatableInstanceCache() {
+        return this.geoCache;
     }
 
     // -------------------------------------------------------------------------
@@ -306,6 +361,12 @@ public class QuestNPCEntity extends PathfinderMob {
         tag.putDouble("PatrolSpeed", patrolSpeed);
         tag.putInt("PatrolDelayMin", patrolDelayMin);
         tag.putInt("PatrolDelayMax", patrolDelayMax);
+
+        // Модель NPC
+        String modelType = getModelEntityType();
+        if (!modelType.isEmpty()) {
+            tag.putString("ModelEntityType", modelType);
+        }
     }
 
     @Override
@@ -326,9 +387,15 @@ public class QuestNPCEntity extends PathfinderMob {
         if (this.getAttribute(Attributes.MOVEMENT_SPEED) != null) {
             this.getAttribute(Attributes.MOVEMENT_SPEED).setBaseValue(patrolSpeed);
         }
+
+        // Модель NPC
+        if (tag.contains("ModelEntityType")) {
+            setModelEntityType(tag.getString("ModelEntityType"));
+        }
+
         QuestNPCLogger.debug(
-                "NPC {}: загружены настройки из NBT: speed={}, delay={}-{}с",
-                this.getId(), patrolSpeed, patrolDelayMin, patrolDelayMax
+                "NPC {}: загружены настройки из NBT: speed={}, delay={}-{}с, model={}",
+                this.getId(), patrolSpeed, patrolDelayMin, patrolDelayMax, getModelEntityType()
         );
 
         if (tag.contains("BoundBlockX")) {

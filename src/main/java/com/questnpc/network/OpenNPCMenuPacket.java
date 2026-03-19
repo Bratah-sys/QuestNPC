@@ -19,12 +19,14 @@ public class OpenNPCMenuPacket {
     private final double speed;
     private final int delayMin;
     private final int delayMax;
+    private final String modelType;
 
-    public OpenNPCMenuPacket(int entityId, double speed, int delayMin, int delayMax) {
+    public OpenNPCMenuPacket(int entityId, double speed, int delayMin, int delayMax, String modelType) {
         this.entityId = entityId;
         this.speed = speed;
         this.delayMin = delayMin;
         this.delayMax = delayMax;
+        this.modelType = modelType != null ? modelType : "";
     }
 
     public static void encode(OpenNPCMenuPacket packet, FriendlyByteBuf buf) {
@@ -32,6 +34,7 @@ public class OpenNPCMenuPacket {
         buf.writeDouble(packet.speed);
         buf.writeVarInt(packet.delayMin);
         buf.writeVarInt(packet.delayMax);
+        buf.writeUtf(packet.modelType, 256);
     }
 
     public static OpenNPCMenuPacket decode(FriendlyByteBuf buf) {
@@ -39,7 +42,8 @@ public class OpenNPCMenuPacket {
                 buf.readVarInt(),
                 buf.readDouble(),
                 buf.readVarInt(),
-                buf.readVarInt()
+                buf.readVarInt(),
+                buf.readUtf(256)
         );
     }
 
@@ -49,7 +53,7 @@ public class OpenNPCMenuPacket {
             if (mc.level == null) return;
             Entity entity = mc.level.getEntity(packet.entityId);
             if (entity instanceof QuestNPCEntity npc) {
-                mc.setScreen(new NPCMenuScreen(npc, packet.speed, packet.delayMin, packet.delayMax));
+                mc.setScreen(new NPCMenuScreen(npc, packet.speed, packet.delayMin, packet.delayMax, packet.modelType));
             }
         });
         ctx.get().setPacketHandled(true);

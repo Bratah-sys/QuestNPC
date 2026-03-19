@@ -69,5 +69,14 @@
   "gui.questnpc.menu.npc_renamed": "NPC renamed",
   "gui.questnpc.menu.footer": "QuestNPC \u00b7 v0.3.1-alpha \u00b7 Forge 1.20.1",
   "message.questnpc.npc_renamed": "\u00a7a[QuestNPC] NPC renamed",
-  "message.questnpc.npc_deleted": "\u00a7a[QuestNPC] NPC deleted"
+  "message.questnpc.npc_deleted": "\u00a7a[QuestNPC] NPC deleted",
+  "gui.questnpc.catalog.title": "Select Model",
+  "gui.questnpc.catalog.search": "Search...",
+  "gui.questnpc.catalog.vanilla": "Vanilla",
+  "gui.questnpc.catalog.select": "Select",
+  "gui.questnpc.catalog.back": "\u2190 Back",
+  "gui.questnpc.catalog.from_file": "Load from File",
+  "gui.questnpc.catalog.wip": "Work in Progress...",
+  "gui.questnpc.catalog.no_results": "No entities found",
+  "message.questnpc.model_changed": "\u00a7a[QuestNPC] NPC model changed to %s"
 }

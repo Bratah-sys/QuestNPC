@@ -69,5 +69,14 @@
   "gui.questnpc.menu.npc_renamed": "NPC переименован",
   "gui.questnpc.menu.footer": "QuestNPC \u00b7 v0.3.1-alpha \u00b7 Forge 1.20.1",
   "message.questnpc.npc_renamed": "\u00a7a[QuestNPC] NPC переименован",
-  "message.questnpc.npc_deleted": "\u00a7a[QuestNPC] NPC удалён"
+  "message.questnpc.npc_deleted": "\u00a7a[QuestNPC] NPC удалён",
+  "gui.questnpc.catalog.title": "Выбор модели",
+  "gui.questnpc.catalog.search": "Поиск...",
+  "gui.questnpc.catalog.vanilla": "Ванила",
+  "gui.questnpc.catalog.select": "Выбрать",
+  "gui.questnpc.catalog.back": "\u2190 Назад",
+  "gui.questnpc.catalog.from_file": "Загрузить из файла",
+  "gui.questnpc.catalog.wip": "В разработке...",
+  "gui.questnpc.catalog.no_results": "Существа не найдены",
+  "message.questnpc.model_changed": "\u00a7a[QuestNPC] Модель NPC изменена на %s"
 }

@@ -3,6 +3,7 @@ package com.questnpc.client.gui;
 import com.questnpc.QuestNPCLogger;
 import com.questnpc.client.gui.widget.DarkButton;
 import com.questnpc.entity.QuestNPCEntity;
+import com.questnpc.network.ChangeModelPacket;
 import com.questnpc.network.DeleteNPCPacket;
 import com.questnpc.network.ModNetwork;
 import com.questnpc.network.RenameNPCPacket;
@@ -14,6 +15,13 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.client.gui.screens.inventory.InventoryScreen;
 import net.minecraft.core.BlockPos;
 import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.entity.LivingEntity;
+import net.minecraftforge.registries.ForgeRegistries;
+
+import javax.annotation.Nullable;
 
 /**
  * Двухпанельное меню NPC в тёмном стиле.
@@ -51,6 +59,7 @@ public class NPCMenuScreen extends Screen {
     private final double currentSpeed;
     private final int currentDelayMin;
     private final int currentDelayMax;
+    private final String currentModelType;
 
     // ═══ Виджеты ═══
     private EditBox nameField;
@@ -60,12 +69,28 @@ public class NPCMenuScreen extends Screen {
     private boolean deleteConfirm = false;
     private int panelX, panelY;
 
-    public NPCMenuScreen(QuestNPCEntity npc, double speed, int delayMin, int delayMax) {
+    // ═══ Выбор модели из каталога (ожидает "Применить") ═══
+    @Nullable
+    private ResourceLocation pendingModelType;
+    @Nullable
+    private LivingEntity previewEntity;
+
+    public NPCMenuScreen(QuestNPCEntity npc, double speed, int delayMin, int delayMax, String modelType) {
         super(Component.translatable("gui.questnpc.menu.title"));
         this.npc = npc;
         this.currentSpeed = speed;
         this.currentDelayMin = delayMin;
         this.currentDelayMax = delayMax;
+        this.currentModelType = modelType != null ? modelType : "";
+    }
+
+    /**
+     * Устанавливает выбранную модель из каталога. Вызывается из ModelCatalogScreen.
+     */
+    public void setPendingModelType(@Nullable ResourceLocation modelType) {
+        this.pendingModelType = modelType;
+        // Сбрасываем кэш превью
+        this.previewEntity = null;
     }
 
     @Override
@@ -137,7 +162,7 @@ public class NPCMenuScreen extends Screen {
             }
         }
 
-        // ═══ Левая панель: кнопки-заглушки ═══
+        // ═══ Левая панель: кнопки ═══
         int leftBtnW = LEFT_WIDTH - PADDING * 2;
         int leftBtnY = panelY + TOTAL_HEIGHT - 60;
         this.addRenderableWidget(new DarkButton(
@@ -148,7 +173,16 @@ public class NPCMenuScreen extends Screen {
         this.addRenderableWidget(new DarkButton(
             panelX + PADDING, leftBtnY + 20, leftBtnW, 16,
             Component.translatable("gui.questnpc.menu.btn.change_model"),
-            button -> {}
+            button -> {
+                // Открываем каталог моделей
+                ResourceLocation current = null;
+                if (pendingModelType != null) {
+                    current = pendingModelType;
+                } else if (!currentModelType.isEmpty()) {
+                    current = ResourceLocation.tryParse(currentModelType);
+                }
+                Minecraft.getInstance().setScreen(new ModelCatalogScreen(this, current));
+            }
         ));
 
         // ═══ Нижняя панель: утилиты ═══
@@ -172,11 +206,12 @@ public class NPCMenuScreen extends Screen {
             BTN_GREEN_BG, BTN_GREEN_HOVER, 0xFFFFFFFF
         ));
 
-        // Возродить (заглушка)
+        // Применить модель (если выбрана)
         this.addRenderableWidget(new DarkButton(
             panelX + PADDING + bottomBtnW + PADDING, bottomY, bottomBtnW, 20,
-            Component.translatable("gui.questnpc.menu.btn.respawn"),
-            button -> {}
+            Component.translatable("gui.questnpc.npc_menu.apply"),
+            button -> applyModel(),
+            BTN_GREEN_BG, BTN_GREEN_HOVER, 0xFFFFFFFF
         ));
 
         // Удалить
@@ -193,6 +228,14 @@ public class NPCMenuScreen extends Screen {
         String name = nameField.getValue().trim();
         if (name.isEmpty() || name.length() > 32) return;
         ModNetwork.INSTANCE.sendToServer(new RenameNPCPacket(npc.getId(), name));
+    }
+
+    // ═══ Логика применения модели ═══
+    private void applyModel() {
+        if (pendingModelType != null) {
+            ModNetwork.INSTANCE.sendToServer(new ChangeModelPacket(npc.getId(), pendingModelType.toString()));
+            QuestNPCLogger.info("Отправлен запрос смены модели NPC {} на '{}'", npc.getId(), pendingModelType);
+        }
     }
 
     // ═══ Логика удаления (двойной клик) ═══
@@ -301,19 +344,86 @@ public class NPCMenuScreen extends Screen {
         g.fill(previewLeft, previewTop, previewRight, previewBottom, SECTION_BG);
         drawOutlineRect(g, previewLeft, previewTop, previewRight - previewLeft, previewBottom - previewTop, BORDER);
 
-        // Рендер модели NPC с вращением мышкой (1.20.1 API: x, y, size, mouseX, mouseY, entity)
+        // Определяем что рендерить в превью
+        LivingEntity entityToRender = getPreviewEntity();
         int renderX = previewCenterX;
         int renderY = previewBottom - 5;
         float relMouseX = renderX - mouseX;
         float relMouseY = renderY - 30 - mouseY;
-        InventoryScreen.renderEntityInInventoryFollowsMouse(
-                g, renderX, renderY, previewSize, relMouseX, relMouseY, npc);
+
+        if (entityToRender != null) {
+            // Рендерим выбранную модель или дефолтный NPC
+            try {
+                float entityH = entityToRender.getBbHeight();
+                int scale = (int) Math.max(15, Math.min(previewSize, (previewBottom - previewTop - 10) / entityH * 0.8F));
+                InventoryScreen.renderEntityInInventoryFollowsMouse(
+                        g, renderX, renderY, scale, relMouseX, relMouseY, entityToRender);
+            } catch (Exception e) {
+                // Fallback: рендерим NPC
+                InventoryScreen.renderEntityInInventoryFollowsMouse(
+                        g, renderX, renderY, previewSize, relMouseX, relMouseY, npc);
+            }
+        } else {
+            InventoryScreen.renderEntityInInventoryFollowsMouse(
+                    g, renderX, renderY, previewSize, relMouseX, relMouseY, npc);
+        }
+
+        // Подпись под превью: какая модель выбрана
+        int labelY = previewBottom + 2;
+        if (pendingModelType != null) {
+            String modelName = pendingModelType.getPath();
+            g.drawCenteredString(this.font, modelName, previewCenterX, labelY, TEXT_CYAN & 0x00FFFFFF);
+        }
 
         // Pos: текущая позиция
-        int posY = previewBottom + 4;
+        int posY = previewBottom + 14;
         String posStr = (int) npc.getX() + ", " + (int) npc.getY() + ", " + (int) npc.getZ();
         g.drawString(this.font, Component.translatable("gui.questnpc.menu.pos", posStr),
                 lx, posY, TEXT_CYAN & 0x00FFFFFF, false);
+    }
+
+    /**
+     * Получает entity для превью в левой панели.
+     * Если pendingModelType задан — создаёт/кэширует фейковую entity.
+     */
+    @Nullable
+    private LivingEntity getPreviewEntity() {
+        if (pendingModelType == null) {
+            // Если у NPC уже задана модель — показываем её
+            String currentModel = npc.getModelEntityType();
+            if (currentModel.isEmpty()) return null; // дефолт — рендерим NPC напрямую
+
+            ResourceLocation rl = ResourceLocation.tryParse(currentModel);
+            if (rl == null) return null;
+            return getOrCreatePreviewEntity(rl);
+        }
+        return getOrCreatePreviewEntity(pendingModelType);
+    }
+
+    @Nullable
+    private LivingEntity getOrCreatePreviewEntity(ResourceLocation rl) {
+        // Проверяем кэш
+        if (previewEntity != null) {
+            ResourceLocation cachedType = ForgeRegistries.ENTITY_TYPES.getKey(previewEntity.getType());
+            if (rl.equals(cachedType)) return previewEntity;
+        }
+
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) return null;
+
+        EntityType<?> type = ForgeRegistries.ENTITY_TYPES.getValue(rl);
+        if (type == null) return null;
+
+        try {
+            Entity entity = type.create(mc.level);
+            if (entity instanceof LivingEntity living) {
+                previewEntity = living;
+                return living;
+            }
+        } catch (Exception e) {
+            QuestNPCLogger.warn("Не удалось создать превью entity '{}': {}", rl, e.getMessage());
+        }
+        return null;
     }
 
     // ═══════════════════════════════════════════════

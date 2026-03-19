@@ -73,6 +73,13 @@ public final class ModNetwork {
                 DeleteNPCPacket::decode,
                 DeleteNPCPacket::handle
         );
+        INSTANCE.registerMessage(
+                7,
+                ChangeModelPacket.class,
+                ChangeModelPacket::encode,
+                ChangeModelPacket::decode,
+                ChangeModelPacket::handle
+        );
     }
 
     private ModNetwork() {}
