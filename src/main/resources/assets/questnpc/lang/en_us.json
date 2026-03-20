@@ -79,5 +79,11 @@
   "gui.questnpc.catalog.wip": "Work in Progress...",
   "gui.questnpc.catalog.no_results": "No entities found",
   "message.questnpc.model_changed": "\u00a7a[QuestNPC] NPC model changed to %s",
-  "message.questnpc.too_far_to_delete": "Move closer to the NPC to delete it"
+  "message.questnpc.too_far_to_delete": "Move closer to the NPC to delete it",
+  "gui.questnpc.model_catalog.custom_models": "Custom Models",
+  "gui.questnpc.model_catalog.no_custom_models": "No custom models found. Place .geo.json files in: %s",
+  "gui.questnpc.model_catalog.load_success": "Model '%s' loaded successfully",
+  "gui.questnpc.model_catalog.load_error": "Failed to load model: %s",
+  "gui.questnpc.model_catalog.open_folder": "Open Folder",
+  "gui.questnpc.model_catalog.refresh": "Refresh"
 }

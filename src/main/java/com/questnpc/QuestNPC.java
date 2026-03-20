@@ -3,6 +3,8 @@ package com.questnpc;
 import com.questnpc.block.ModBlocks;
 import com.questnpc.client.ModKeyBindings;
 import com.questnpc.client.debug.NPCDebugRenderer;
+import com.questnpc.client.model.CustomModelManager;
+import com.questnpc.client.model.CustomModelPackResources;
 import com.questnpc.commands.NpcVisCommand;
 import com.questnpc.entity.ModEntityTypes;
 import com.questnpc.entity.QuestNPCEntity;
@@ -22,6 +24,11 @@ import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
+import net.minecraftforge.event.AddPackFindersEvent;
+import net.minecraft.server.packs.PackType;
+import net.minecraft.server.packs.repository.Pack;
+import net.minecraft.server.packs.repository.PackSource;
+import net.minecraft.network.chat.Component;
 
 /**
  * Главный класс мода QuestNPC.
@@ -31,7 +38,7 @@ import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 public class QuestNPC {
 
     public static final String MOD_ID = "questnpc";
-    public static final String MOD_VERSION = "0.3.1-alpha-menurefactor-v2.2.2";
+    public static final String MOD_VERSION = "0.3.1-alpha-menurefactor-v2.3.4";
 
     public QuestNPC() {
         QuestNPCLogger.info("Инициализация мода QuestNPC v{}", MOD_VERSION);
@@ -40,6 +47,7 @@ public class QuestNPC {
         IEventBus modBus = FMLJavaModLoadingContext.get().getModEventBus();
         modBus.addListener(this::onCommonSetup);
         modBus.addListener(this::onClientSetup);
+        modBus.addListener(this::onAddPackFinders);
         modBus.addListener(ModKeyBindings::register);
 
         // Регистрация блоков, предметов, сущностей и креативной вкладки
@@ -73,9 +81,38 @@ public class QuestNPC {
             // Регистрация сетевого канала
             ModNetwork.register();
             QuestNPCLogger.info("ModNetwork зарегистрирован");
+
+            // Создание папки кастомных моделей
+            CustomModelManager.getInstance().ensureDirectoryExists();
         });
 
         QuestNPCLogger.info("FMLCommonSetupEvent: общая инициализация завершена");
+    }
+
+    /**
+     * Регистрация кастомного ресурс-пака для загрузки .geo.json моделей из файловой системы.
+     */
+    private void onAddPackFinders(final AddPackFindersEvent event) {
+        if (event.getPackType() != PackType.CLIENT_RESOURCES) return;
+
+        CustomModelManager.getInstance().ensureDirectoryExists();
+
+        event.addRepositorySource(consumer -> {
+            var pack = Pack.readMetaAndCreate(
+                    "questnpc_custom_models",
+                    Component.literal("QuestNPC Custom Models"),
+                    true, // required — всегда активен
+                    id -> new CustomModelPackResources(
+                            CustomModelManager.getInstance().getModelsDirectory()),
+                    PackType.CLIENT_RESOURCES,
+                    Pack.Position.TOP,
+                    PackSource.BUILT_IN
+            );
+            if (pack != null) {
+                consumer.accept(pack);
+                QuestNPCLogger.info("Зарегистрирован ресурс-пак для кастомных моделей");
+            }
+        });
     }
 
     /**

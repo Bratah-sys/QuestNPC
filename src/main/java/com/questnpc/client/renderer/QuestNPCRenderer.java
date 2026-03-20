@@ -4,6 +4,7 @@ import com.mojang.blaze3d.vertex.PoseStack;
 import com.mojang.blaze3d.vertex.VertexConsumer;
 import com.questnpc.QuestNPC;
 import com.questnpc.QuestNPCLogger;
+import com.questnpc.client.model.CustomModelManager;
 import com.questnpc.client.model.QuestNPCGeoModel;
 import com.questnpc.entity.ModEntityTypes;
 import com.questnpc.entity.QuestNPCEntity;
@@ -38,7 +39,7 @@ import java.util.Map;
  * Три режима:
  * 1) Дефолт (modelEntityType пуст) — ванильный VillagerModel + FarmerProfessionLayer
  * 2) Ванильный моб (modelEntityType = "minecraft:zombie" и т.д.) — фейковая entity через ванильный рендерер
- * 3) Кастомная модель (будущее, modelEntityType = "questnpc:custom/...") — GeckoLib pipeline
+ * 3) Кастомная модель (modelEntityType = "custom:cool_kid") — GeckoLib pipeline из .geo.json файлов
  */
 @Mod.EventBusSubscriber(modid = QuestNPC.MOD_ID, bus = Mod.EventBusSubscriber.Bus.MOD, value = Dist.CLIENT)
 public class QuestNPCRenderer extends GeoEntityRenderer<QuestNPCEntity> {
@@ -110,10 +111,40 @@ public class QuestNPCRenderer extends GeoEntityRenderer<QuestNPCEntity> {
         if (modelType.isEmpty()) {
             // РЕЖИМ 1: Дефолт — ванильный VillagerModel
             renderAsVillager(entity, entityYaw, partialTick, poseStack, bufferSource, packedLight);
+        } else if (CustomModelManager.isCustomModel(modelType)) {
+            // РЕЖИМ 3: Кастомная .geo.json модель — GeckoLib pipeline
+            renderAsCustomGeoModel(entity, entityYaw, partialTick, poseStack, bufferSource, packedLight);
         } else {
             // РЕЖИМ 2: Ванильный моб — фейковая сущность
             renderAsFakeEntity(entity, modelType, entityYaw, partialTick, poseStack, bufferSource, packedLight);
         }
+    }
+
+    // ═══════════════════════════════════════════════
+    // РЕЖИМ 3: Кастомная .geo.json модель (GeckoLib)
+    // ═══════════════════════════════════════════════
+
+    /**
+     * Рендерит NPC с кастомной .geo.json моделью через стандартный GeckoLib pipeline.
+     * QuestNPCGeoModel динамически возвращает правильные ResourceLocation.
+     */
+    private void renderAsCustomGeoModel(QuestNPCEntity entity, float entityYaw, float partialTick,
+                                        PoseStack poseStack, MultiBufferSource bufferSource, int packedLight) {
+        this.shadowRadius = 0.5F;
+        // Safety wrapper: GeckoLib может оставить PoseStack в грязном состоянии при ошибке
+        // (pushPose без popPose). Оборачиваем в свой push/pop чтобы гарантировать баланс.
+        poseStack.pushPose();
+        try {
+            // GeckoLib pipeline: super.render() использует QuestNPCGeoModel
+            // который вернёт ResourceLocation для кастомной модели/текстуры
+            super.render(entity, entityYaw, partialTick, poseStack, bufferSource, packedLight);
+        } catch (Exception e) {
+            QuestNPCLogger.warn("Ошибка рендера кастомной модели '{}' для NPC {}: {}",
+                    entity.getModelEntityType(), entity.getId(), e.getMessage());
+            // GeckoLib мог оставить лишние push в стеке — пытаемся вычистить
+            try { poseStack.popPose(); } catch (Exception ignored) {}
+        }
+        poseStack.popPose();
     }
 
     // ═══════════════════════════════════════════════
@@ -297,6 +328,10 @@ public class QuestNPCRenderer extends GeoEntityRenderer<QuestNPCEntity> {
 
     @Override
     public ResourceLocation getTextureLocation(QuestNPCEntity entity) {
+        // Для кастомных моделей — делегируем в GeoModel для получения правильной текстуры
+        if (CustomModelManager.isCustomModel(entity.getModelEntityType())) {
+            return this.model.getTextureResource(entity);
+        }
         return JUNGLE_TYPE_TEXTURE;
     }
 

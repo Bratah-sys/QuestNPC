@@ -2,6 +2,7 @@ package com.questnpc.client.gui;
 
 import com.questnpc.QuestNPCLogger;
 import com.questnpc.client.gui.widget.DarkButton;
+import com.questnpc.entity.ModEntityTypes;
 import com.questnpc.entity.QuestNPCEntity;
 import com.questnpc.network.ChangeModelPacket;
 import com.questnpc.network.CloseMenuPacket;
@@ -88,11 +89,27 @@ public class NPCMenuScreen extends Screen {
         this.currentModelType = modelType != null ? modelType : "";
     }
 
+    // ═══ Выбор кастомной модели (custom:...) ═══
+    @Nullable
+    private String pendingCustomModelType;
+
     /**
-     * Устанавливает выбранную модель из каталога. Вызывается из ModelCatalogScreen.
+     * Устанавливает выбранную модель из каталога мобов. Вызывается из ModelCatalogScreen.
      */
     public void setPendingModelType(@Nullable ResourceLocation modelType) {
         this.pendingModelType = modelType;
+        this.pendingCustomModelType = null;
+        // Сбрасываем кэш превью
+        this.previewEntity = null;
+    }
+
+    /**
+     * Устанавливает выбранную кастомную модель. Вызывается из CustomModelBrowserScreen.
+     * @param customModelType полный идентификатор, напр. "custom:cool_kid"
+     */
+    public void setPendingCustomModel(String customModelType) {
+        this.pendingCustomModelType = customModelType;
+        this.pendingModelType = null;
         // Сбрасываем кэш превью
         this.previewEntity = null;
     }
@@ -247,7 +264,13 @@ public class NPCMenuScreen extends Screen {
 
     // ═══ Логика применения модели ═══
     private void applyModel() {
-        if (pendingModelType != null) {
+        if (pendingCustomModelType != null) {
+            // Кастомная модель из .geo.json
+            ModNetwork.INSTANCE.sendToServer(new ChangeModelPacket(npc.getId(), pendingCustomModelType));
+            QuestNPCLogger.info("NPC {} — применена кастомная модель '{}' из файла",
+                    npc.getId(), pendingCustomModelType);
+        } else if (pendingModelType != null) {
+            // Ванильный моб из каталога
             ModNetwork.INSTANCE.sendToServer(new ChangeModelPacket(npc.getId(), pendingModelType.toString()));
             QuestNPCLogger.info("Отправлен запрос смены модели NPC {} на '{}'", npc.getId(), pendingModelType);
         }
@@ -385,7 +408,13 @@ public class NPCMenuScreen extends Screen {
 
         // Подпись под превью: какая модель выбрана
         int labelY = previewBottom + 2;
-        if (pendingModelType != null) {
+        if (pendingCustomModelType != null) {
+            // Кастомная модель: показываем имя файла
+            String name = pendingCustomModelType.startsWith("custom:")
+                    ? pendingCustomModelType.substring("custom:".length())
+                    : pendingCustomModelType;
+            g.drawCenteredString(this.font, "\u2B50 " + name, previewCenterX, labelY, TEXT_CYAN & 0x00FFFFFF);
+        } else if (pendingModelType != null) {
             String modelName = pendingModelType.getPath();
             g.drawCenteredString(this.font, modelName, previewCenterX, labelY, TEXT_CYAN & 0x00FFFFFF);
         }
@@ -399,20 +428,58 @@ public class NPCMenuScreen extends Screen {
 
     /**
      * Получает entity для превью в левой панели.
-     * Если pendingModelType задан — создаёт/кэширует фейковую entity.
+     * Если pendingModelType/pendingCustomModelType задан — создаёт/кэширует фейковую entity.
      */
     @Nullable
     private LivingEntity getPreviewEntity() {
-        if (pendingModelType == null) {
-            // Если у NPC уже задана модель — показываем её
-            String currentModel = npc.getModelEntityType();
-            if (currentModel.isEmpty()) return null; // дефолт — рендерим NPC напрямую
-
-            ResourceLocation rl = ResourceLocation.tryParse(currentModel);
-            if (rl == null) return null;
-            return getOrCreatePreviewEntity(rl);
+        // Кастомная модель из .geo.json — создаём фейковый QuestNPCEntity с нужным modelType
+        if (pendingCustomModelType != null) {
+            return getOrCreateCustomPreviewEntity(pendingCustomModelType);
         }
-        return getOrCreatePreviewEntity(pendingModelType);
+
+        if (pendingModelType != null) {
+            return getOrCreatePreviewEntity(pendingModelType);
+        }
+
+        // Если у NPC уже задана модель — показываем её
+        String currentModel = npc.getModelEntityType();
+        if (currentModel.isEmpty()) return null; // дефолт — рендерим NPC напрямую
+
+        if (currentModel.startsWith("custom:")) {
+            return getOrCreateCustomPreviewEntity(currentModel);
+        }
+
+        ResourceLocation rl = ResourceLocation.tryParse(currentModel);
+        if (rl == null) return null;
+        return getOrCreatePreviewEntity(rl);
+    }
+
+    /**
+     * Создаёт/кэширует фейковый QuestNPCEntity для превью кастомной модели.
+     */
+    @Nullable
+    private LivingEntity getOrCreateCustomPreviewEntity(String customModelType) {
+        // Проверяем кэш — если уже создан для этой модели, возвращаем
+        if (previewEntity instanceof QuestNPCEntity fakeNpc
+                && customModelType.equals(fakeNpc.getModelEntityType())) {
+            return previewEntity;
+        }
+
+        Minecraft mc = Minecraft.getInstance();
+        if (mc.level == null) return null;
+
+        try {
+            QuestNPCEntity fakeNpc = ModEntityTypes.QUEST_NPC.get().create(mc.level);
+            if (fakeNpc != null) {
+                fakeNpc.setModelEntityType(customModelType);
+                previewEntity = fakeNpc;
+                return fakeNpc;
+            }
+        } catch (Exception e) {
+            QuestNPCLogger.warn("Не удалось создать превью для кастомной модели '{}': {}",
+                    customModelType, e.getMessage());
+        }
+        return null;
     }
 
     @Nullable

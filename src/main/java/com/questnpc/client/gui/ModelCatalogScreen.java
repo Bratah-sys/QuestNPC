@@ -136,7 +136,7 @@ public class ModelCatalogScreen extends Screen {
         this.addRenderableWidget(new DarkButton(
                 folderBtnX, 6, 20, 20,
                 Component.literal("\uD83D\uDCC1"),
-                button -> Minecraft.getInstance().setScreen(new WIPScreen(this))
+                button -> Minecraft.getInstance().setScreen(new CustomModelBrowserScreen(this))
         ));
 
         // ═══ Кнопки внизу ═══
@@ -640,6 +640,13 @@ public class ModelCatalogScreen extends Screen {
     @Nullable
     public ResourceLocation getSelectedModel() {
         return selectedModel;
+    }
+
+    /**
+     * Возвращает родительский экран (NPCMenuScreen).
+     */
+    public Screen getParent() {
+        return parent;
     }
 
     @Override

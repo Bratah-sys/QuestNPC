@@ -224,6 +224,9 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity {
 
         if (modelType == null || modelType.isEmpty()) {
             this.currentDimensions = DEFAULT_DIMENSIONS;
+        } else if (modelType.startsWith("custom:")) {
+            // Кастомные .geo.json модели — используем дефолтные размеры
+            this.currentDimensions = DEFAULT_DIMENSIONS;
         } else {
             ResourceLocation rl = ResourceLocation.tryParse(modelType);
             if (rl != null) {

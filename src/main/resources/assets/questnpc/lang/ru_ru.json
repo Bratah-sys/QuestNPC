@@ -79,5 +79,11 @@
   "gui.questnpc.catalog.wip": "В разработке...",
   "gui.questnpc.catalog.no_results": "Существа не найдены",
   "message.questnpc.model_changed": "\u00a7a[QuestNPC] Модель NPC изменена на %s",
-  "message.questnpc.too_far_to_delete": "Подойдите ближе к NPC для удаления"
+  "message.questnpc.too_far_to_delete": "Подойдите ближе к NPC для удаления",
+  "gui.questnpc.model_catalog.custom_models": "Кастомные модели",
+  "gui.questnpc.model_catalog.no_custom_models": "Кастомных моделей не найдено. Поместите .geo.json в: %s",
+  "gui.questnpc.model_catalog.load_success": "Модель '%s' успешно загружена",
+  "gui.questnpc.model_catalog.load_error": "Ошибка загрузки модели: %s",
+  "gui.questnpc.model_catalog.open_folder": "Открыть папку",
+  "gui.questnpc.model_catalog.refresh": "Обновить"
 }

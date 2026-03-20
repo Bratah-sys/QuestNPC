@@ -54,13 +54,24 @@ public class ChangeModelPacket {
                 return;
             }
 
-            // Валидация: пустая строка = сброс к дефолту, иначе проверяем что EntityType существует
+            // Валидация: пустая строка = сброс к дефолту
             if (!packet.modelType.isEmpty()) {
-                ResourceLocation rl = ResourceLocation.tryParse(packet.modelType);
-                if (rl == null || !ForgeRegistries.ENTITY_TYPES.containsKey(rl)) {
-                    QuestNPCLogger.warn("Невалидный тип модели '{}' от игрока {} для NPC {}",
-                            packet.modelType, player.getName().getString(), packet.entityId);
-                    return;
+                if (packet.modelType.startsWith("custom:")) {
+                    // Кастомная модель — проверяем что имя не пустое и содержит только допустимые символы
+                    String customName = packet.modelType.substring("custom:".length());
+                    if (customName.isEmpty() || !customName.matches("[a-zA-Z0-9_\\-]+")) {
+                        QuestNPCLogger.warn("Невалидное имя кастомной модели '{}' от игрока {} для NPC {}",
+                                packet.modelType, player.getName().getString(), packet.entityId);
+                        return;
+                    }
+                } else {
+                    // Ванильный моб — проверяем что EntityType существует
+                    ResourceLocation rl = ResourceLocation.tryParse(packet.modelType);
+                    if (rl == null || !ForgeRegistries.ENTITY_TYPES.containsKey(rl)) {
+                        QuestNPCLogger.warn("Невалидный тип модели '{}' от игрока {} для NPC {}",
+                                packet.modelType, player.getName().getString(), packet.entityId);
+                        return;
+                    }
                 }
             }
 
