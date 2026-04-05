@@ -85,5 +85,18 @@
   "gui.questnpc.model_catalog.load_success": "Model '%s' loaded successfully",
   "gui.questnpc.model_catalog.load_error": "Failed to load model: %s",
   "gui.questnpc.model_catalog.open_folder": "Open Folder",
-  "gui.questnpc.model_catalog.refresh": "Refresh"
+  "gui.questnpc.model_catalog.refresh": "Refresh",
+  "gui.questnpc.trading.title": "Trading",
+  "gui.questnpc.trading.enabled": "● TRADING ENABLED",
+  "gui.questnpc.trading.disabled": "○ TRADING DISABLED",
+  "gui.questnpc.trading.add_offer": "+ Add Trade",
+  "gui.questnpc.trading.offers_count": "Trades (%d/10):",
+  "gui.questnpc.trading.limit": "Limit",
+  "gui.questnpc.trading.unlimited": "∞",
+  "gui.questnpc.trading.refill_on": "Refill: ON",
+  "gui.questnpc.trading.refill_off": "Refill: OFF",
+  "gui.questnpc.trading.input1_hint": "Item to give (required)",
+  "gui.questnpc.trading.input2_hint": "Item to give (optional)",
+  "gui.questnpc.trading.output_hint": "Item to receive (required)",
+  "gui.questnpc.trading.wip": "Player trading screen coming soon"
 }

@@ -52,7 +52,8 @@ public class NPCInteractionHandler {
                 PacketDistributor.PLAYER.with(() -> player),
                 new OpenNPCMenuPacket(npc.getId(), npc.getPatrolSpeed(),
                         npc.getPatrolDelayMin(), npc.getPatrolDelayMax(),
-                        npc.getModelEntityType())
+                        npc.getModelEntityType(),
+                        npc.getTradingEnabled(), npc.getTradeOffers())
         );
         event.setCanceled(true);
         event.setCancellationResult(InteractionResult.SUCCESS);

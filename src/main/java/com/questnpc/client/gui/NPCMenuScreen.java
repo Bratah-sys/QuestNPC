@@ -9,6 +9,7 @@ import com.questnpc.network.CloseMenuPacket;
 import com.questnpc.network.DeleteNPCPacket;
 import com.questnpc.network.ModNetwork;
 import com.questnpc.network.RenameNPCPacket;
+import net.minecraft.nbt.ListTag;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
@@ -62,6 +63,8 @@ public class NPCMenuScreen extends Screen {
     private final int currentDelayMin;
     private final int currentDelayMax;
     private final String currentModelType;
+    private final boolean currentTradingEnabled;
+    private final ListTag currentTradeOffers;
 
     // ═══ Виджеты ═══
     private EditBox nameField;
@@ -80,13 +83,16 @@ public class NPCMenuScreen extends Screen {
     @Nullable
     private LivingEntity previewEntity;
 
-    public NPCMenuScreen(QuestNPCEntity npc, double speed, int delayMin, int delayMax, String modelType) {
+    public NPCMenuScreen(QuestNPCEntity npc, double speed, int delayMin, int delayMax, String modelType,
+                         boolean tradingEnabled, ListTag tradeOffers) {
         super(Component.translatable("gui.questnpc.menu.title"));
         this.npc = npc;
         this.currentSpeed = speed;
         this.currentDelayMin = delayMin;
         this.currentDelayMax = delayMax;
         this.currentModelType = modelType != null ? modelType : "";
+        this.currentTradingEnabled = tradingEnabled;
+        this.currentTradeOffers = tradeOffers != null ? tradeOffers : new ListTag();
     }
 
     // ═══ Выбор кастомной модели (custom:...) ═══
@@ -181,6 +187,12 @@ public class NPCMenuScreen extends Screen {
                         navigatingToSubScreen = true;
                         Minecraft.getInstance().setScreen(
                             new NPCPositionScreen(npc, this));
+                    };
+                } else if (key.equals("gui.questnpc.menu.btn.trading")) {
+                    action = button -> {
+                        navigatingToSubScreen = true;
+                        Minecraft.getInstance().setScreen(
+                            new NPCTradingScreen(npc, currentTradingEnabled, currentTradeOffers, this));
                     };
                 } else {
                     action = button -> {}; // заглушка

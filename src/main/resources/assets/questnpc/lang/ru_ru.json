@@ -85,5 +85,18 @@
   "gui.questnpc.model_catalog.load_success": "Модель '%s' успешно загружена",
   "gui.questnpc.model_catalog.load_error": "Ошибка загрузки модели: %s",
   "gui.questnpc.model_catalog.open_folder": "Открыть папку",
-  "gui.questnpc.model_catalog.refresh": "Обновить"
+  "gui.questnpc.model_catalog.refresh": "Обновить",
+  "gui.questnpc.trading.title": "Торговля",
+  "gui.questnpc.trading.enabled": "● ТОРГОВЛЯ ВКЛЮЧЕНА",
+  "gui.questnpc.trading.disabled": "○ ТОРГОВЛЯ ВЫКЛЮЧЕНА",
+  "gui.questnpc.trading.add_offer": "+ Добавить сделку",
+  "gui.questnpc.trading.offers_count": "Сделок (%d/10):",
+  "gui.questnpc.trading.limit": "Лимит",
+  "gui.questnpc.trading.unlimited": "∞",
+  "gui.questnpc.trading.refill_on": "Восст.: ВКЛ",
+  "gui.questnpc.trading.refill_off": "Восст.: ВЫКЛ",
+  "gui.questnpc.trading.input1_hint": "Товар игрока (обязательно)",
+  "gui.questnpc.trading.input2_hint": "Товар игрока 2 (необязательно)",
+  "gui.questnpc.trading.output_hint": "Получает игрок (обязательно)",
+  "gui.questnpc.trading.wip": "Экран торговли для игрока будет добавлен позже"
 }

@@ -10,7 +10,7 @@ import net.minecraftforge.network.simple.SimpleChannel;
  */
 public final class ModNetwork {
 
-    private static final String PROTOCOL_VERSION = "3";
+    private static final String PROTOCOL_VERSION = "4";
 
     public static final SimpleChannel INSTANCE = NetworkRegistry.newSimpleChannel(
             new ResourceLocation(QuestNPC.MOD_ID, "main"),
@@ -86,6 +86,27 @@ public final class ModNetwork {
                 CloseMenuPacket::encode,
                 CloseMenuPacket::decode,
                 CloseMenuPacket::handle
+        );
+        INSTANCE.registerMessage(
+                9,
+                UpdateTradingEnabledPacket.class,
+                UpdateTradingEnabledPacket::encode,
+                UpdateTradingEnabledPacket::decode,
+                UpdateTradingEnabledPacket::handle
+        );
+        INSTANCE.registerMessage(
+                10,
+                UpdateTradeOffersPacket.class,
+                UpdateTradeOffersPacket::encode,
+                UpdateTradeOffersPacket::decode,
+                UpdateTradeOffersPacket::handle
+        );
+        INSTANCE.registerMessage(
+                11,
+                OpenTradingScreenPacket.class,
+                OpenTradingScreenPacket::encode,
+                OpenTradingScreenPacket::decode,
+                OpenTradingScreenPacket::handle
         );
     }
 

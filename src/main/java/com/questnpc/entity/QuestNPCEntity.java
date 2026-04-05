@@ -6,6 +6,8 @@ import com.questnpc.network.ModNetwork;
 import com.questnpc.network.PathSyncPacket;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.Tag;
 import net.minecraft.network.syncher.EntityDataAccessor;
 import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
@@ -75,6 +77,10 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity {
     private double patrolSpeed = DEFAULT_PATROL_SPEED;
     private int patrolDelayMin = DEFAULT_DELAY_MIN;
     private int patrolDelayMax = DEFAULT_DELAY_MAX;
+
+    // --- Торговля ---
+    private boolean tradingEnabled = false;
+    private ListTag tradeOffers = new ListTag();
 
     // --- GeckoLib ---
     private final AnimatableInstanceCache geoCache = GeckoLibUtil.createInstanceCache(this);
@@ -193,6 +199,26 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity {
         if (boundedStrollGoal != null) {
             boundedStrollGoal.setDelayRange(minSeconds * 20, maxSeconds * 20);
         }
+    }
+
+    // -------------------------------------------------------------------------
+    // Торговля
+    // -------------------------------------------------------------------------
+
+    public boolean getTradingEnabled() {
+        return tradingEnabled;
+    }
+
+    public void setTradingEnabled(boolean enabled) {
+        this.tradingEnabled = enabled;
+    }
+
+    public ListTag getTradeOffers() {
+        return tradeOffers;
+    }
+
+    public void setTradeOffers(ListTag offers) {
+        this.tradeOffers = offers != null ? offers : new ListTag();
     }
 
     // -------------------------------------------------------------------------
@@ -447,6 +473,12 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity {
         if (!modelType.isEmpty()) {
             tag.putString("ModelEntityType", modelType);
         }
+
+        // Торговля
+        tag.putBoolean("TradingEnabled", tradingEnabled);
+        if (!tradeOffers.isEmpty()) {
+            tag.put("TradeOffers", tradeOffers);
+        }
     }
 
     @Override
@@ -471,6 +503,14 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity {
         // Модель NPC
         if (tag.contains("ModelEntityType")) {
             setModelEntityType(tag.getString("ModelEntityType"));
+        }
+
+        // Торговля
+        if (tag.contains("TradingEnabled")) {
+            tradingEnabled = tag.getBoolean("TradingEnabled");
+        }
+        if (tag.contains("TradeOffers")) {
+            tradeOffers = tag.getList("TradeOffers", Tag.TAG_COMPOUND);
         }
 
         QuestNPCLogger.debug(

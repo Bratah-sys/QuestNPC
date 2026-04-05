@@ -14,7 +14,11 @@ public class WIPScreen extends Screen {
     private final Screen parent;
 
     public WIPScreen(Screen parent) {
-        super(Component.translatable("gui.questnpc.catalog.wip"));
+        this(parent, Component.translatable("gui.questnpc.catalog.wip"));
+    }
+
+    public WIPScreen(Screen parent, Component title) {
+        super(title);
         this.parent = parent;
     }
 
