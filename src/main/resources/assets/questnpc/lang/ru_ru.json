@@ -95,8 +95,16 @@
   "gui.questnpc.trading.unlimited": "∞",
   "gui.questnpc.trading.refill_on": "Восст.: ВКЛ",
   "gui.questnpc.trading.refill_off": "Восст.: ВЫКЛ",
-  "gui.questnpc.trading.input1_hint": "Товар игрока (обязательно)",
-  "gui.questnpc.trading.input2_hint": "Товар игрока 2 (необязательно)",
-  "gui.questnpc.trading.output_hint": "Получает игрок (обязательно)",
-  "gui.questnpc.trading.wip": "Экран торговли для игрока будет добавлен позже"
+  "gui.questnpc.trading.slot_empty": "Клик \u2014 выбор предмета",
+  "gui.questnpc.trading.count_hint": "кол-во",
+  "gui.questnpc.trading.wip": "Экран торговли для игрока будет добавлен позже",
+  "gui.questnpc.item_catalog.title": "Каталог предметов",
+  "gui.questnpc.item_catalog.search": "Поиск предметов...",
+  "gui.questnpc.item_catalog.vanilla": "Ванила",
+  "gui.questnpc.item_catalog.select": "Выбрать",
+  "gui.questnpc.item_catalog.clear": "Очистить",
+  "gui.questnpc.item_catalog.back": "\u2190 Назад",
+  "gui.questnpc.item_catalog.selected": "Выбрано: %s",
+  "gui.questnpc.item_catalog.none_selected": "Не выбрано",
+  "gui.questnpc.item_catalog.no_results": "Предметы не найдены"
 }

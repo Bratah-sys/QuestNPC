@@ -7,7 +7,9 @@ import com.questnpc.network.UpdateTradeOffersPacket;
 import com.questnpc.network.UpdateTradingEnabledPacket;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
+import net.minecraft.client.gui.components.AbstractWidget;
 import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
@@ -15,6 +17,7 @@ import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.Items;
 import net.minecraftforge.registries.ForgeRegistries;
 
 import javax.annotation.Nullable;
@@ -24,25 +27,34 @@ import java.util.List;
 /**
  * Административный экран настройки торговли NPC.
  * Позволяет включить/выключить торговлю и настроить список сделок (до 10).
+ *
+ * <p>Слоты предметов (input1, input2, output) выбираются визуально через
+ * {@link ItemCatalogScreen} — клик по слоту открывает полноэкранный каталог
+ * предметов с вкладками по модам и поиском. Количество задаётся в микро-поле
+ * справа от иконки (1–64).
  */
 public class NPCTradingScreen extends Screen {
 
     // ─── Layout constants ────────────────────────────────────────────────
     private static final int PANEL_WIDTH    = 380;
-    private static final int PANEL_HEIGHT   = 284;
+    private static final int PANEL_HEIGHT   = 296;
     private static final int PADDING        = 10;
     private static final int VISIBLE_ROWS   = 4;
     private static final int MAX_OFFERS     = 10;
     private static final int ROW_AREA_START = 76;  // relative to panelY
-    private static final int ROW_HEIGHT     = 40;
+    private static final int ROW_HEIGHT     = 46;
 
     // Column layout (relative to contentX)
-    private static final int EDIT_W   = 86; // width of each item EditBox
-    private static final int EDIT_GAP = 12; // gap between columns (for separator chars)
-    private static final int COL2_OFF = EDIT_W + EDIT_GAP;           // = 98
-    private static final int COL3_OFF = (EDIT_W + EDIT_GAP) * 2;     // = 196
-    private static final int DEL_OFF  = (EDIT_W + EDIT_GAP) * 3;     // = 294
-    private static final int LIMIT_W  = 38;
+    private static final int SLOT_SIZE    = 20;  // icon cell size
+    private static final int COUNT_W      = 22;  // count EditBox width
+    private static final int COUNT_H      = 14;
+    private static final int SLOT_GAP     = 2;   // gap between icon and count box
+    private static final int SEP_W        = 14;  // separator "+" / "→"
+    private static final int COL_STRIDE   = SLOT_SIZE + SLOT_GAP + COUNT_W + SEP_W; // = 58
+    private static final int COL2_OFF     = COL_STRIDE;        // = 58
+    private static final int COL3_OFF     = COL_STRIDE * 2;    // = 116
+    private static final int DEL_OFF      = COL_STRIDE * 3 + 8;
+    private static final int LIMIT_W      = 38;
 
     // ─── Data ────────────────────────────────────────────────────────────
     private final QuestNPCEntity npc;
@@ -64,9 +76,12 @@ public class NPCTradingScreen extends Screen {
     private DarkButton scrollUpBtn;
     private DarkButton scrollDownBtn;
 
-    private final EditBox[]    input1Boxes = new EditBox[VISIBLE_ROWS];
-    private final EditBox[]    input2Boxes = new EditBox[VISIBLE_ROWS];
-    private final EditBox[]    outputBoxes = new EditBox[VISIBLE_ROWS];
+    private final SlotWidget[] input1Slots = new SlotWidget[VISIBLE_ROWS];
+    private final SlotWidget[] input2Slots = new SlotWidget[VISIBLE_ROWS];
+    private final SlotWidget[] outputSlots = new SlotWidget[VISIBLE_ROWS];
+    private final EditBox[]    count1Boxes = new EditBox[VISIBLE_ROWS];
+    private final EditBox[]    count2Boxes = new EditBox[VISIBLE_ROWS];
+    private final EditBox[]    countOutBoxes = new EditBox[VISIBLE_ROWS];
     private final EditBox[]    limitBoxes  = new EditBox[VISIBLE_ROWS];
     private final DarkButton[] refillBtns  = new DarkButton[VISIBLE_ROWS];
     private final DarkButton[] deleteBtns  = new DarkButton[VISIBLE_ROWS];
@@ -74,9 +89,6 @@ public class NPCTradingScreen extends Screen {
     // ─── Inner data class ────────────────────────────────────────────────
 
     private static class OfferData {
-        String  input1Text = "";
-        String  input2Text = "";
-        String  outputText = "";
         String  limitText  = "0";
         boolean refilable  = true;
         int     uses       = 0;
@@ -115,15 +127,12 @@ public class NPCTradingScreen extends Screen {
             OfferData data = new OfferData();
             if (offerTag.contains("input1")) {
                 data.input1 = ItemStack.of(offerTag.getCompound("input1"));
-                data.input1Text = itemToText(data.input1);
             }
             if (offerTag.contains("input2")) {
                 data.input2 = ItemStack.of(offerTag.getCompound("input2"));
-                data.input2Text = itemToText(data.input2);
             }
             if (offerTag.contains("output")) {
                 data.output = ItemStack.of(offerTag.getCompound("output"));
-                data.outputText = itemToText(data.output);
             }
             data.limitText = String.valueOf(offerTag.getInt("maxUses"));
             data.refilable = !offerTag.contains("refilable") || offerTag.getBoolean("refilable");
@@ -148,31 +157,23 @@ public class NPCTradingScreen extends Screen {
         return result;
     }
 
-    // ─── Item parsing ────────────────────────────────────────────────────
+    // ─── Slot accessors ──────────────────────────────────────────────────
 
-    @Nullable
-    private static ItemStack parseItemStack(String text) {
-        if (text == null) return null;
-        text = text.trim();
-        if (text.isEmpty()) return null;
-        String[] parts = text.split("\\s+", 2);
-        ResourceLocation rl = ResourceLocation.tryParse(parts[0]);
-        if (rl == null) return null;
-        Item item = ForgeRegistries.ITEMS.getValue(rl);
-        if (item == null || item == net.minecraft.world.item.Items.AIR) return null;
-        int count = 1;
-        if (parts.length > 1) {
-            try { count = Math.max(1, Math.min(64, Integer.parseInt(parts[1]))); }
-            catch (NumberFormatException ignored) {}
-        }
-        return new ItemStack(item, count);
+    private ItemStack getStackForCol(OfferData offer, int col) {
+        return switch (col) {
+            case 0 -> offer.input1;
+            case 1 -> offer.input2;
+            case 2 -> offer.output;
+            default -> ItemStack.EMPTY;
+        };
     }
 
-    private static String itemToText(ItemStack stack) {
-        if (stack == null || stack.isEmpty()) return "";
-        ResourceLocation key = ForgeRegistries.ITEMS.getKey(stack.getItem());
-        if (key == null) return "";
-        return stack.getCount() == 1 ? key.toString() : key + " " + stack.getCount();
+    private void setStackForCol(OfferData offer, int col, ItemStack stack) {
+        switch (col) {
+            case 0 -> offer.input1 = stack;
+            case 1 -> offer.input2 = stack;
+            case 2 -> offer.output = stack;
+        }
     }
 
     // ─── Screen init ─────────────────────────────────────────────────────
@@ -216,59 +217,27 @@ public class NPCTradingScreen extends Screen {
             int ry = panelY + ROW_AREA_START + slot * ROW_HEIGHT;
             final int s = slot;
 
-            // Input 1
-            input1Boxes[slot] = new EditBox(this.font,
-                    cx, ry, EDIT_W, 16, Component.literal(""));
-            input1Boxes[slot].setMaxLength(64);
-            input1Boxes[slot].setBordered(false);
-            input1Boxes[slot].setHint(Component.translatable("gui.questnpc.trading.input1_hint"));
-            input1Boxes[slot].setResponder(text -> {
-                if (refreshing) return;
-                int idx = scrollOffset + s;
-                if (idx >= offers.size()) return;
-                offers.get(idx).input1Text = text;
-                ItemStack parsed = parseItemStack(text);
-                offers.get(idx).input1 = parsed != null ? parsed : ItemStack.EMPTY;
-                updateRowTextColor(s);
-            });
-            this.addRenderableWidget(input1Boxes[slot]);
+            // Input 1 — slot + count box
+            input1Slots[slot] = this.addRenderableWidget(
+                    new SlotWidget(s, 0, cx, ry));
+            count1Boxes[slot] = createCountBox(cx + SLOT_SIZE + SLOT_GAP, ry + 3, s, 0);
+            this.addRenderableWidget(count1Boxes[slot]);
 
-            // Input 2
-            input2Boxes[slot] = new EditBox(this.font,
-                    cx + COL2_OFF, ry, EDIT_W, 16, Component.literal(""));
-            input2Boxes[slot].setMaxLength(64);
-            input2Boxes[slot].setBordered(false);
-            input2Boxes[slot].setHint(Component.translatable("gui.questnpc.trading.input2_hint"));
-            input2Boxes[slot].setResponder(text -> {
-                if (refreshing) return;
-                int idx = scrollOffset + s;
-                if (idx >= offers.size()) return;
-                offers.get(idx).input2Text = text;
-                ItemStack parsed = parseItemStack(text);
-                offers.get(idx).input2 = parsed != null ? parsed : ItemStack.EMPTY;
-            });
-            this.addRenderableWidget(input2Boxes[slot]);
+            // Input 2 — slot + count box
+            input2Slots[slot] = this.addRenderableWidget(
+                    new SlotWidget(s, 1, cx + COL2_OFF, ry));
+            count2Boxes[slot] = createCountBox(cx + COL2_OFF + SLOT_SIZE + SLOT_GAP, ry + 3, s, 1);
+            this.addRenderableWidget(count2Boxes[slot]);
 
-            // Output
-            outputBoxes[slot] = new EditBox(this.font,
-                    cx + COL3_OFF, ry, EDIT_W, 16, Component.literal(""));
-            outputBoxes[slot].setMaxLength(64);
-            outputBoxes[slot].setBordered(false);
-            outputBoxes[slot].setHint(Component.translatable("gui.questnpc.trading.output_hint"));
-            outputBoxes[slot].setResponder(text -> {
-                if (refreshing) return;
-                int idx = scrollOffset + s;
-                if (idx >= offers.size()) return;
-                offers.get(idx).outputText = text;
-                ItemStack parsed = parseItemStack(text);
-                offers.get(idx).output = parsed != null ? parsed : ItemStack.EMPTY;
-                updateRowTextColor(s);
-            });
-            this.addRenderableWidget(outputBoxes[slot]);
+            // Output — slot + count box
+            outputSlots[slot] = this.addRenderableWidget(
+                    new SlotWidget(s, 2, cx + COL3_OFF, ry));
+            countOutBoxes[slot] = createCountBox(cx + COL3_OFF + SLOT_SIZE + SLOT_GAP, ry + 3, s, 2);
+            this.addRenderableWidget(countOutBoxes[slot]);
 
             // Limit EditBox
             limitBoxes[slot] = new EditBox(this.font,
-                    cx + 44, ry + 22, LIMIT_W, 14, Component.literal(""));
+                    cx + 44, ry + 26, LIMIT_W, 14, Component.literal(""));
             limitBoxes[slot].setMaxLength(6);
             limitBoxes[slot].setBordered(false);
             limitBoxes[slot].setFilter(str -> str.isEmpty() || str.matches("\\d{1,6}"));
@@ -282,7 +251,7 @@ public class NPCTradingScreen extends Screen {
 
             // Refill toggle
             refillBtns[slot] = this.addRenderableWidget(new DarkButton(
-                    cx + 90, ry + 22, 80, 14,
+                    cx + 90, ry + 26, 80, 14,
                     Component.translatable("gui.questnpc.trading.refill_on"),
                     button -> {
                         int idx = scrollOffset + s;
@@ -347,6 +316,28 @@ public class NPCTradingScreen extends Screen {
         updateScrollButtons();
     }
 
+    private EditBox createCountBox(int x, int y, int visibleRow, int col) {
+        EditBox box = new EditBox(this.font, x, y, COUNT_W, COUNT_H, Component.literal(""));
+        box.setMaxLength(2);
+        box.setBordered(false);
+        box.setHint(Component.translatable("gui.questnpc.trading.count_hint"));
+        box.setFilter(str -> str.isEmpty() || str.matches("\\d{1,2}"));
+        box.setResponder(text -> {
+            if (refreshing) return;
+            int idx = scrollOffset + visibleRow;
+            if (idx >= offers.size()) return;
+            OfferData offer = offers.get(idx);
+            ItemStack stack = getStackForCol(offer, col);
+            if (stack.isEmpty()) return;
+            int c;
+            try { c = text.isEmpty() ? 1 : Integer.parseInt(text); }
+            catch (NumberFormatException e) { c = 1; }
+            c = Math.max(1, Math.min(64, c));
+            stack.setCount(c);
+        });
+        return box;
+    }
+
     // ─── Logic ───────────────────────────────────────────────────────────
 
     private Component toggleComponent() {
@@ -358,7 +349,6 @@ public class NPCTradingScreen extends Screen {
     private void addOffer() {
         if (offers.size() >= MAX_OFFERS) return;
         offers.add(new OfferData());
-        // Scroll to last page if new offer is beyond visible area
         if (offers.size() > scrollOffset + VISIBLE_ROWS) {
             scrollOffset = offers.size() - VISIBLE_ROWS;
         }
@@ -379,6 +369,34 @@ public class NPCTradingScreen extends Screen {
         addBtn.active = offers.size() < MAX_OFFERS;
     }
 
+    /**
+     * Вызывается из {@link ItemCatalogScreen} при возврате с выбранным предметом.
+     *
+     * @param globalSlotId {@code visibleRow * 3 + col}
+     * @param selected     выбранный предмет (null = очистить слот)
+     */
+    public void setPendingItemSelection(int globalSlotId, @Nullable Item selected) {
+        int visibleRow = globalSlotId / 3;
+        int col = globalSlotId % 3;
+        if (visibleRow < 0 || visibleRow >= VISIBLE_ROWS) return;
+        int offerIdx = scrollOffset + visibleRow;
+        if (offerIdx >= offers.size()) return;
+
+        OfferData offer = offers.get(offerIdx);
+        ItemStack oldStack = getStackForCol(offer, col);
+        int keepCount = oldStack.isEmpty() ? 1 : oldStack.getCount();
+        if (keepCount < 1) keepCount = 1;
+
+        ItemStack newStack;
+        if (selected == null || selected == Items.AIR) {
+            newStack = ItemStack.EMPTY;
+        } else {
+            newStack = new ItemStack(selected, keepCount);
+        }
+        setStackForCol(offer, col, newStack);
+        refreshRows();
+    }
+
     /** Синхронизирует содержимое виджетов строк с данными из списка сделок. */
     private void refreshRows() {
         refreshing = true;
@@ -387,29 +405,34 @@ public class NPCTradingScreen extends Screen {
                 int offerIdx = scrollOffset + slot;
                 boolean hasOffer = offerIdx < offers.size();
 
-                input1Boxes[slot].visible = hasOffer;
-                input2Boxes[slot].visible = hasOffer;
-                outputBoxes[slot].visible = hasOffer;
+                input1Slots[slot].visible = hasOffer;
+                input2Slots[slot].visible = hasOffer;
+                outputSlots[slot].visible = hasOffer;
+                count1Boxes[slot].visible = hasOffer;
+                count2Boxes[slot].visible = hasOffer;
+                countOutBoxes[slot].visible = hasOffer;
                 limitBoxes[slot].visible  = hasOffer;
                 refillBtns[slot].visible  = hasOffer;
                 deleteBtns[slot].visible  = hasOffer;
 
-                input1Boxes[slot].active = hasOffer;
-                input2Boxes[slot].active = hasOffer;
-                outputBoxes[slot].active = hasOffer;
+                input1Slots[slot].active = hasOffer;
+                input2Slots[slot].active = hasOffer;
+                outputSlots[slot].active = hasOffer;
+                count1Boxes[slot].active = hasOffer;
+                count2Boxes[slot].active = hasOffer;
+                countOutBoxes[slot].active = hasOffer;
                 limitBoxes[slot].active  = hasOffer;
                 refillBtns[slot].active  = hasOffer;
                 deleteBtns[slot].active  = hasOffer;
 
                 if (hasOffer) {
                     OfferData offer = offers.get(offerIdx);
-                    input1Boxes[slot].setValue(offer.input1Text);
-                    input2Boxes[slot].setValue(offer.input2Text);
-                    outputBoxes[slot].setValue(offer.outputText);
+                    count1Boxes[slot].setValue(countText(offer.input1));
+                    count2Boxes[slot].setValue(countText(offer.input2));
+                    countOutBoxes[slot].setValue(countText(offer.output));
                     limitBoxes[slot].setValue(offer.limitText.equals("0") ? "0" : offer.limitText);
                     refillBtns[slot].setMessage(Component.translatable(
                             offer.refilable ? "gui.questnpc.trading.refill_on" : "gui.questnpc.trading.refill_off"));
-                    updateRowTextColor(slot);
                 }
             }
         } finally {
@@ -417,38 +440,11 @@ public class NPCTradingScreen extends Screen {
         }
     }
 
-    private void updateRowTextColor(int slot) {
-        int offerIdx = scrollOffset + slot;
-        if (offerIdx >= offers.size()) return;
-        OfferData offer = offers.get(offerIdx);
-
-        // Input1: red = text entered but unparseable; white = valid; default = empty hint
-        if (offer.input1Text.isEmpty()) {
-            input1Boxes[slot].setTextColor(0xAAAAAA);
-        } else {
-            input1Boxes[slot].setTextColor(offer.input1Valid()
-                    ? 0xFFFFFF : (NPCMenuScreen.TEXT_RED & 0x00FFFFFF));
-        }
-
-        // Input2: optional — red only if text is non-empty and invalid
-        if (offer.input2Text.isEmpty()) {
-            input2Boxes[slot].setTextColor(0xAAAAAA);
-        } else {
-            input2Boxes[slot].setTextColor(
-                    !offer.input2.isEmpty() ? 0xFFFFFF : (NPCMenuScreen.TEXT_RED & 0x00FFFFFF));
-        }
-
-        // Output: required
-        if (offer.outputText.isEmpty()) {
-            outputBoxes[slot].setTextColor(0xAAAAAA);
-        } else {
-            outputBoxes[slot].setTextColor(offer.outputValid()
-                    ? 0xFFFFFF : (NPCMenuScreen.TEXT_RED & 0x00FFFFFF));
-        }
+    private static String countText(ItemStack stack) {
+        return stack.isEmpty() ? "" : String.valueOf(stack.getCount());
     }
 
     private void applySettings() {
-        // Отправляем два пакета: сначала тумблер, потом список сделок
         ModNetwork.INSTANCE.sendToServer(
                 new UpdateTradingEnabledPacket(npc.getId(), tradingEnabled));
         ModNetwork.INSTANCE.sendToServer(
@@ -478,34 +474,36 @@ public class NPCTradingScreen extends Screen {
         g.drawString(this.font, countStr, cx, panelY + 54,
                 NPCMenuScreen.TEXT_WHITE & 0x00FFFFFF, false);
 
-        // 4. Row backgrounds + separators + limit labels
+        // 4. Row separators + limit labels
         for (int slot = 0; slot < VISIBLE_ROWS; slot++) {
             int offerIdx = scrollOffset + slot;
             if (offerIdx >= offers.size()) break;
             OfferData offer = offers.get(offerIdx);
             int ry = panelY + ROW_AREA_START + slot * ROW_HEIGHT;
 
-            // EditBox backgrounds
-            boolean i1ok = offer.input1Text.isEmpty() || offer.input1Valid();
-            boolean outOk = offer.outputText.isEmpty() || offer.outputValid();
-            NPCMenuScreen.drawEditBoxBg(g, cx - 2,             ry - 2, EDIT_W + 4, 20, i1ok);
-            NPCMenuScreen.drawEditBoxBg(g, cx + COL2_OFF - 2,  ry - 2, EDIT_W + 4, 20, true);
-            NPCMenuScreen.drawEditBoxBg(g, cx + COL3_OFF - 2,  ry - 2, EDIT_W + 4, 20, outOk);
+            // Фон под count-box'ами
+            NPCMenuScreen.drawEditBoxBg(g,
+                    cx + SLOT_SIZE + SLOT_GAP - 2, ry + 1, COUNT_W + 4, COUNT_H + 4, true);
+            NPCMenuScreen.drawEditBoxBg(g,
+                    cx + COL2_OFF + SLOT_SIZE + SLOT_GAP - 2, ry + 1, COUNT_W + 4, COUNT_H + 4, true);
+            NPCMenuScreen.drawEditBoxBg(g,
+                    cx + COL3_OFF + SLOT_SIZE + SLOT_GAP - 2, ry + 1, COUNT_W + 4, COUNT_H + 4, true);
 
-            // Separator chars
+            // Separator chars "+" and "→" в разрывах между слотами
+            int plusX = cx + SLOT_SIZE + SLOT_GAP + COUNT_W + 2;
+            int arrowX = cx + COL2_OFF + SLOT_SIZE + SLOT_GAP + COUNT_W + 2;
             g.drawString(this.font, "+",
-                    cx + EDIT_W + 3, ry + 4, NPCMenuScreen.TEXT_GRAY & 0x00FFFFFF, false);
+                    plusX, ry + 6, NPCMenuScreen.TEXT_GRAY & 0x00FFFFFF, false);
             g.drawString(this.font, "\u2192",
-                    cx + COL3_OFF - 9, ry + 4, NPCMenuScreen.TEXT_GRAY & 0x00FFFFFF, false);
+                    arrowX, ry + 6, NPCMenuScreen.TEXT_GRAY & 0x00FFFFFF, false);
 
             // Line 2: "Лимит:" label + limit EditBox bg
-            int ry2 = ry + 22;
+            int ry2 = ry + 26;
             String limitLabel = Component.translatable("gui.questnpc.trading.limit").getString() + ":";
             g.drawString(this.font, limitLabel, cx, ry2 + 1,
                     NPCMenuScreen.TEXT_GRAY & 0x00FFFFFF, false);
             NPCMenuScreen.drawEditBoxBg(g, cx + 42, ry2 - 2, LIMIT_W + 4, 18, true);
 
-            // "0=∞" hint to right of limit box
             if (offer.getMaxUses() == 0) {
                 g.drawString(this.font,
                         Component.translatable("gui.questnpc.trading.unlimited").getString(),
@@ -513,7 +511,7 @@ public class NPCTradingScreen extends Screen {
                         NPCMenuScreen.TEXT_GRAY & 0x00FFFFFF, false);
             }
 
-            // Row divider (except after last visible offer)
+            // Row divider
             if (slot < VISIBLE_ROWS - 1 && offerIdx < offers.size() - 1) {
                 g.fill(panelX + 1, ry + ROW_HEIGHT - 1,
                         panelX + PANEL_WIDTH - 1, ry + ROW_HEIGHT,
@@ -525,7 +523,7 @@ public class NPCTradingScreen extends Screen {
         int scrollAreaY = panelY + ROW_AREA_START + VISIBLE_ROWS * ROW_HEIGHT + 4;
         if (offers.size() > VISIBLE_ROWS) {
             int end = Math.min(scrollOffset + VISIBLE_ROWS, offers.size());
-            String scrollInfo = (scrollOffset + 1) + "–" + end + " / " + offers.size();
+            String scrollInfo = (scrollOffset + 1) + "\u2013" + end + " / " + offers.size();
             g.drawCenteredString(this.font, scrollInfo,
                     panelX + PANEL_WIDTH / 2 - 20, scrollAreaY + 3,
                     NPCMenuScreen.TEXT_GRAY & 0x00FFFFFF);
@@ -539,12 +537,129 @@ public class NPCTradingScreen extends Screen {
                 panelX + PANEL_WIDTH / 2, panelY + PANEL_HEIGHT - 10,
                 NPCMenuScreen.TEXT_DARK_GRAY & 0x00FFFFFF);
 
-        // 7. Widgets on top
+        // 7. Widgets on top (вкл. SlotWidget с иконками)
         super.render(g, mouseX, mouseY, partialTick);
+
+        // 8. Тултипы для слотов — поверх super.render
+        renderSlotTooltips(g, mouseX, mouseY);
+    }
+
+    private void renderSlotTooltips(GuiGraphics g, int mouseX, int mouseY) {
+        for (int slot = 0; slot < VISIBLE_ROWS; slot++) {
+            int offerIdx = scrollOffset + slot;
+            if (offerIdx >= offers.size()) break;
+            renderTooltipIfHovered(g, input1Slots[slot], offers.get(offerIdx).input1, mouseX, mouseY);
+            renderTooltipIfHovered(g, input2Slots[slot], offers.get(offerIdx).input2, mouseX, mouseY);
+            renderTooltipIfHovered(g, outputSlots[slot], offers.get(offerIdx).output, mouseX, mouseY);
+        }
+    }
+
+    private void renderTooltipIfHovered(GuiGraphics g, SlotWidget slot, ItemStack stack,
+                                        int mouseX, int mouseY) {
+        if (!slot.visible) return;
+        if (mouseX < slot.getX() || mouseX >= slot.getX() + SLOT_SIZE) return;
+        if (mouseY < slot.getY() || mouseY >= slot.getY() + SLOT_SIZE) return;
+        if (stack.isEmpty()) {
+            g.renderTooltip(this.font,
+                    Component.translatable("gui.questnpc.trading.slot_empty"),
+                    mouseX, mouseY);
+        } else {
+            try {
+                g.renderTooltip(this.font, stack, mouseX, mouseY);
+            } catch (Exception ignored) {}
+        }
     }
 
     @Override
     public boolean isPauseScreen() {
         return false;
+    }
+
+    // ─── SlotWidget inner class ──────────────────────────────────────────
+
+    /**
+     * Клик-ячейка 20×20 для выбора предмета. Рендерит иконку текущего предмета
+     * через {@link GuiGraphics#renderItem(ItemStack, int, int)} или "+" если пусто.
+     * По клику открывает {@link ItemCatalogScreen}.
+     */
+    private class SlotWidget extends AbstractWidget {
+        private final int visibleRow;
+        private final int col; // 0=input1, 1=input2, 2=output
+
+        SlotWidget(int visibleRow, int col, int x, int y) {
+            super(x, y, SLOT_SIZE, SLOT_SIZE, Component.empty());
+            this.visibleRow = visibleRow;
+            this.col = col;
+        }
+
+        @Nullable
+        private ItemStack currentStack() {
+            int offerIdx = scrollOffset + visibleRow;
+            if (offerIdx >= offers.size()) return null;
+            return getStackForCol(offers.get(offerIdx), col);
+        }
+
+        @Override
+        protected void renderWidget(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
+            if (!this.visible) return;
+            int x = this.getX();
+            int y = this.getY();
+
+            ItemStack stack = currentStack();
+            boolean hovered = this.isHovered();
+            boolean empty = stack == null || stack.isEmpty();
+
+            // Фон ячейки: валидность зависит от колонки (input1/output обязательны)
+            boolean required = (col != 1);
+            boolean valid = !empty;
+            int borderColor;
+            int bgColor;
+            if (empty && required) {
+                borderColor = NPCMenuScreen.TEXT_RED;
+                bgColor = 0xFF2B1515;
+            } else if (empty) {
+                borderColor = NPCMenuScreen.BORDER;
+                bgColor = 0xFF1F2937;
+            } else {
+                borderColor = 0xFF2DD4BF;
+                bgColor = 0xFF0F2E24;
+            }
+            if (hovered) {
+                bgColor = 0xFF2D3748;
+            }
+            g.fill(x, y, x + SLOT_SIZE, y + SLOT_SIZE, bgColor);
+            NPCMenuScreen.drawOutlineRect(g, x, y, SLOT_SIZE, SLOT_SIZE, borderColor);
+
+            if (!empty) {
+                try {
+                    g.renderItem(stack, x + 2, y + 2);
+                    // Декорации не нужны — количество редактируется рядом, и штатный
+                    // рендер количества мешал бы восприятию
+                } catch (Exception ignored) {}
+            } else {
+                g.drawCenteredString(
+                        Minecraft.getInstance().font, "+",
+                        x + SLOT_SIZE / 2, y + SLOT_SIZE / 2 - 4,
+                        valid ? (NPCMenuScreen.TEXT_GRAY & 0x00FFFFFF)
+                              : (NPCMenuScreen.TEXT_RED & 0x00FFFFFF));
+            }
+        }
+
+        @Override
+        public void onClick(double mouseX, double mouseY) {
+            int offerIdx = scrollOffset + visibleRow;
+            if (offerIdx >= offers.size()) return;
+            ItemStack current = getStackForCol(offers.get(offerIdx), col);
+            Item currentItem = current.isEmpty() ? null : current.getItem();
+            int globalSlotId = visibleRow * 3 + col;
+            Minecraft.getInstance().setScreen(
+                    new ItemCatalogScreen(NPCTradingScreen.this, globalSlotId, currentItem));
+        }
+
+        @Override
+        protected void updateWidgetNarration(NarrationElementOutput narration) {
+            narration.add(net.minecraft.client.gui.narration.NarratedElementType.TITLE,
+                    Component.translatable("gui.questnpc.trading.slot_empty"));
+        }
     }
 }

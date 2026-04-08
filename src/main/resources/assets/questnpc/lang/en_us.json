@@ -95,8 +95,16 @@
   "gui.questnpc.trading.unlimited": "∞",
   "gui.questnpc.trading.refill_on": "Refill: ON",
   "gui.questnpc.trading.refill_off": "Refill: OFF",
-  "gui.questnpc.trading.input1_hint": "Item to give (required)",
-  "gui.questnpc.trading.input2_hint": "Item to give (optional)",
-  "gui.questnpc.trading.output_hint": "Item to receive (required)",
-  "gui.questnpc.trading.wip": "Player trading screen coming soon"
+  "gui.questnpc.trading.slot_empty": "Click to choose item",
+  "gui.questnpc.trading.count_hint": "qty",
+  "gui.questnpc.trading.wip": "Player trading screen coming soon",
+  "gui.questnpc.item_catalog.title": "Item Catalog",
+  "gui.questnpc.item_catalog.search": "Search items...",
+  "gui.questnpc.item_catalog.vanilla": "Vanilla",
+  "gui.questnpc.item_catalog.select": "Select",
+  "gui.questnpc.item_catalog.clear": "Clear",
+  "gui.questnpc.item_catalog.back": "\u2190 Back",
+  "gui.questnpc.item_catalog.selected": "Selected: %s",
+  "gui.questnpc.item_catalog.none_selected": "None selected",
+  "gui.questnpc.item_catalog.no_results": "No items found"
 }
