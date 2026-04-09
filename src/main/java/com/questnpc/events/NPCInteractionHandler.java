@@ -2,6 +2,7 @@ package com.questnpc.events;
 
 import com.questnpc.QuestNPCLogger;
 import com.questnpc.entity.QuestNPCEntity;
+import com.questnpc.entity.schedule.ScheduleEntry;
 import com.questnpc.network.ModNetwork;
 import com.questnpc.network.NPCMenuSessionManager;
 import com.questnpc.network.OpenNPCMenuPacket;
@@ -9,6 +10,9 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.chat.Component;
+
+import java.util.ArrayList;
+import java.util.List;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
@@ -47,13 +51,20 @@ public class NPCInteractionHandler {
         NPCMenuSessionManager.getInstance().openSession(
                 player.getUUID(), npc.getId(), player.getName().getString());
 
+        // Упаковываем расписание в список NBT-тегов
+        List<CompoundTag> scheduleTags = new ArrayList<>();
+        for (ScheduleEntry e : npc.getSchedule()) {
+            scheduleTags.add(e.save());
+        }
+
         // Отправляем S2C-пакет для открытия меню с текущими настройками NPC
         ModNetwork.INSTANCE.send(
                 PacketDistributor.PLAYER.with(() -> player),
                 new OpenNPCMenuPacket(npc.getId(), npc.getPatrolSpeed(),
                         npc.getPatrolDelayMin(), npc.getPatrolDelayMax(),
                         npc.getModelEntityType(),
-                        npc.getTradingEnabled(), npc.getTradeOffers())
+                        npc.getTradingEnabled(), npc.getTradeSets(),
+                        npc.isScheduleEnabled(), scheduleTags)
         );
         event.setCanceled(true);
         event.setCancellationResult(InteractionResult.SUCCESS);

@@ -9,7 +9,7 @@ import com.questnpc.network.CloseMenuPacket;
 import com.questnpc.network.DeleteNPCPacket;
 import com.questnpc.network.ModNetwork;
 import com.questnpc.network.RenameNPCPacket;
-import net.minecraft.nbt.ListTag;
+import net.minecraft.nbt.CompoundTag;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
@@ -25,6 +25,8 @@ import net.minecraft.world.entity.LivingEntity;
 import net.minecraftforge.registries.ForgeRegistries;
 
 import javax.annotation.Nullable;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Двухпанельное меню NPC в тёмном стиле.
@@ -63,8 +65,10 @@ public class NPCMenuScreen extends Screen {
     private final int currentDelayMin;
     private final int currentDelayMax;
     private final String currentModelType;
-    private final boolean currentTradingEnabled;
-    private final ListTag currentTradeOffers;
+    private boolean currentTradingEnabled;
+    private List<QuestNPCEntity.TradeSet> currentTradeSets;
+    private boolean currentScheduleEnabled;
+    private List<CompoundTag> currentSchedule;
 
     // ═══ Виджеты ═══
     private EditBox nameField;
@@ -84,7 +88,8 @@ public class NPCMenuScreen extends Screen {
     private LivingEntity previewEntity;
 
     public NPCMenuScreen(QuestNPCEntity npc, double speed, int delayMin, int delayMax, String modelType,
-                         boolean tradingEnabled, ListTag tradeOffers) {
+                         boolean tradingEnabled, List<QuestNPCEntity.TradeSet> tradeSets,
+                         boolean scheduleEnabled, List<CompoundTag> schedule) {
         super(Component.translatable("gui.questnpc.menu.title"));
         this.npc = npc;
         this.currentSpeed = speed;
@@ -92,7 +97,9 @@ public class NPCMenuScreen extends Screen {
         this.currentDelayMax = delayMax;
         this.currentModelType = modelType != null ? modelType : "";
         this.currentTradingEnabled = tradingEnabled;
-        this.currentTradeOffers = tradeOffers != null ? tradeOffers : new ListTag();
+        this.currentTradeSets = tradeSets != null ? tradeSets : new ArrayList<>();
+        this.currentScheduleEnabled = scheduleEnabled;
+        this.currentSchedule = schedule != null ? schedule : new ArrayList<>();
     }
 
     // ═══ Выбор кастомной модели (custom:...) ═══
@@ -192,7 +199,13 @@ public class NPCMenuScreen extends Screen {
                     action = button -> {
                         navigatingToSubScreen = true;
                         Minecraft.getInstance().setScreen(
-                            new NPCTradingScreen(npc, currentTradingEnabled, currentTradeOffers, this));
+                            new NPCTradingScreen(npc, currentTradingEnabled, currentTradeSets, this));
+                    };
+                } else if (key.equals("gui.questnpc.menu.btn.actions")) {
+                    action = button -> {
+                        navigatingToSubScreen = true;
+                        Minecraft.getInstance().setScreen(new ScheduleScreen(
+                                npc, currentTradeSets, currentScheduleEnabled, currentSchedule, this));
                     };
                 } else {
                     action = button -> {}; // заглушка
@@ -554,6 +567,27 @@ public class NPCMenuScreen extends Screen {
     @Override
     public boolean isPauseScreen() {
         return false;
+    }
+
+    // ═══ Обновление кэша из подэкранов (вызывается после Apply) ═══
+
+    /**
+     * Обновляет кэш торговли после применения изменений в {@link NPCTradingScreen}.
+     * Делает защитную копию, чтобы последующие правки в подэкране не мутировали кэш
+     * через разделяемую ссылку.
+     */
+    void updateTradingState(boolean enabled, List<QuestNPCEntity.TradeSet> sets) {
+        this.currentTradingEnabled = enabled;
+        this.currentTradeSets = sets != null ? new ArrayList<>(sets) : new ArrayList<>();
+    }
+
+    /**
+     * Обновляет кэш расписания после применения изменений в {@link ScheduleScreen}.
+     * Делает защитную копию списка NBT-тегов.
+     */
+    void updateScheduleState(boolean enabled, List<CompoundTag> schedule) {
+        this.currentScheduleEnabled = enabled;
+        this.currentSchedule = schedule != null ? new ArrayList<>(schedule) : new ArrayList<>();
     }
 
     // ═══ Закрытие меню — уведомляем сервер для закрытия сессии ═══

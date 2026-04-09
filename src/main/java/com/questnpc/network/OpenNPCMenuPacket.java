@@ -4,20 +4,19 @@ import com.questnpc.client.gui.NPCMenuScreen;
 import com.questnpc.entity.QuestNPCEntity;
 import net.minecraft.client.Minecraft;
 import net.minecraft.nbt.CompoundTag;
-import net.minecraft.nbt.ListTag;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.world.entity.Entity;
 import net.minecraftforge.network.NetworkEvent;
 
+import java.util.ArrayList;
+import java.util.List;
 import java.util.function.Supplier;
 
 /**
  * S2C-пакет: открывает меню NPC на клиенте.
- * Содержит текущие настройки NPC для отображения в GUI.
+ * Содержит текущие настройки NPC для отображения в GUI, включая наборы сделок и расписание.
  */
 public class OpenNPCMenuPacket {
-
-    private static final int MAX_OFFERS = 10;
 
     private final int entityId;
     private final double speed;
@@ -25,17 +24,22 @@ public class OpenNPCMenuPacket {
     private final int delayMax;
     private final String modelType;
     private final boolean tradingEnabled;
-    private final ListTag tradeOffers;
+    private final List<QuestNPCEntity.TradeSet> tradeSets;
+    private final boolean scheduleEnabled;
+    private final List<CompoundTag> schedule;
 
     public OpenNPCMenuPacket(int entityId, double speed, int delayMin, int delayMax, String modelType,
-                             boolean tradingEnabled, ListTag tradeOffers) {
+                             boolean tradingEnabled, List<QuestNPCEntity.TradeSet> tradeSets,
+                             boolean scheduleEnabled, List<CompoundTag> schedule) {
         this.entityId = entityId;
         this.speed = speed;
         this.delayMin = delayMin;
         this.delayMax = delayMax;
         this.modelType = modelType != null ? modelType : "";
         this.tradingEnabled = tradingEnabled;
-        this.tradeOffers = tradeOffers != null ? tradeOffers : new ListTag();
+        this.tradeSets = tradeSets != null ? tradeSets : new ArrayList<>();
+        this.scheduleEnabled = scheduleEnabled;
+        this.schedule = schedule != null ? schedule : new ArrayList<>();
     }
 
     public static void encode(OpenNPCMenuPacket packet, FriendlyByteBuf buf) {
@@ -45,10 +49,12 @@ public class OpenNPCMenuPacket {
         buf.writeVarInt(packet.delayMax);
         buf.writeUtf(packet.modelType, 256);
         buf.writeBoolean(packet.tradingEnabled);
-        int size = Math.min(packet.tradeOffers.size(), MAX_OFFERS);
-        buf.writeVarInt(size);
-        for (int i = 0; i < size; i++) {
-            buf.writeNbt(packet.tradeOffers.getCompound(i));
+        UpdateTradeOffersPacket.writeTradeSets(buf, packet.tradeSets);
+        buf.writeBoolean(packet.scheduleEnabled);
+        int scheduleSize = Math.min(packet.schedule.size(), QuestNPCEntity.MAX_SCHEDULE_ENTRIES);
+        buf.writeVarInt(scheduleSize);
+        for (int i = 0; i < scheduleSize; i++) {
+            buf.writeNbt(packet.schedule.get(i));
         }
     }
 
@@ -59,13 +65,16 @@ public class OpenNPCMenuPacket {
         int delayMax   = buf.readVarInt();
         String model   = buf.readUtf(256);
         boolean trading = buf.readBoolean();
-        ListTag offers = new ListTag();
-        int size = Math.min(buf.readVarInt(), MAX_OFFERS);
-        for (int i = 0; i < size; i++) {
+        List<QuestNPCEntity.TradeSet> sets = UpdateTradeOffersPacket.readTradeSets(buf);
+        boolean scheduleEnabled = buf.readBoolean();
+        int scheduleSize = Math.min(buf.readVarInt(), QuestNPCEntity.MAX_SCHEDULE_ENTRIES);
+        List<CompoundTag> schedule = new ArrayList<>(scheduleSize);
+        for (int i = 0; i < scheduleSize; i++) {
             CompoundTag tag = buf.readNbt();
-            if (tag != null) offers.add(tag);
+            if (tag != null) schedule.add(tag);
         }
-        return new OpenNPCMenuPacket(entityId, speed, delayMin, delayMax, model, trading, offers);
+        return new OpenNPCMenuPacket(entityId, speed, delayMin, delayMax, model, trading, sets,
+                scheduleEnabled, schedule);
     }
 
     public static void handle(OpenNPCMenuPacket packet, Supplier<NetworkEvent.Context> ctx) {
@@ -75,7 +84,8 @@ public class OpenNPCMenuPacket {
             Entity entity = mc.level.getEntity(packet.entityId);
             if (entity instanceof QuestNPCEntity npc) {
                 mc.setScreen(new NPCMenuScreen(npc, packet.speed, packet.delayMin, packet.delayMax,
-                        packet.modelType, packet.tradingEnabled, packet.tradeOffers));
+                        packet.modelType, packet.tradingEnabled, packet.tradeSets,
+                        packet.scheduleEnabled, packet.schedule));
             }
         });
         ctx.get().setPacketHandled(true);

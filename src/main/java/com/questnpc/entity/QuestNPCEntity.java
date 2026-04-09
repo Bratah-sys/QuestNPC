@@ -2,6 +2,8 @@ package com.questnpc.entity;
 
 import com.questnpc.QuestNPCLogger;
 import com.questnpc.entity.ai.BoundedStrollGoal;
+import com.questnpc.entity.ai.ScheduleFollowGoal;
+import com.questnpc.entity.schedule.ScheduleEntry;
 import com.questnpc.network.ModNetwork;
 import com.questnpc.network.PathSyncPacket;
 import net.minecraft.core.BlockPos;
@@ -79,8 +81,33 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity {
     private int patrolDelayMax = DEFAULT_DELAY_MAX;
 
     // --- Торговля ---
+    public static final int MAX_TRADE_SETS = 5;
+    public static final int MAX_OFFERS_PER_SET = 10;
+    public static final String DEFAULT_TRADE_SET_NAME = "Default";
+
     private boolean tradingEnabled = false;
-    private ListTag tradeOffers = new ListTag();
+    private final List<TradeSet> tradeSets = new ArrayList<>();
+
+    // --- Расписание ---
+    public static final int MAX_SCHEDULE_ENTRIES = 10;
+
+    private final List<ScheduleEntry> schedule = new ArrayList<>();
+    private boolean scheduleEnabled = false;
+
+    /**
+     * Именованный набор сделок. У одного NPC может быть до {@link #MAX_TRADE_SETS} наборов.
+     * Формат содержимого {@code offers} совпадает с legacy {@code TradeOffers}:
+     * input1/input2/output/maxUses/refilable/uses.
+     */
+    public static final class TradeSet {
+        public String name;
+        public ListTag offers;
+
+        public TradeSet(String name, ListTag offers) {
+            this.name = name != null ? name : DEFAULT_TRADE_SET_NAME;
+            this.offers = offers != null ? offers : new ListTag();
+        }
+    }
 
     // --- GeckoLib ---
     private final AnimatableInstanceCache geoCache = GeckoLibUtil.createInstanceCache(this);
@@ -99,11 +126,26 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity {
 
     public QuestNPCEntity(EntityType<? extends QuestNPCEntity> type, Level level) {
         super(type, level);
+        // Квестовый NPC никогда не должен исчезать естественным путём —
+        // флаг persistenceRequired отключает soft/hard despawn в Mob.checkDespawn().
+        // Дублируется override'ом removeWhenFarAway() на случай, если флаг будет сброшен.
+        this.setPersistenceRequired();
         QuestNPCLogger.debug(
                 "QuestNPCEntity создан: позиция [{}, {}, {}], dimension [{}]",
                 (int) this.getX(), (int) this.getY(), (int) this.getZ(),
                 level.dimension().location()
         );
+    }
+
+    /**
+     * Квестовый NPC не должен никогда исчезать при удалении игрока.
+     * Override'им vanilla-логику {@link net.minecraft.world.entity.Mob#checkDespawn()},
+     * которая по умолчанию для {@code MobCategory.CREATURE} удаляет мобов
+     * дальше 32 блоков (soft) и 128 блоков (hard).
+     */
+    @Override
+    public boolean removeWhenFarAway(double distanceToClosestPlayer) {
+        return false;
     }
 
     // -------------------------------------------------------------------------
@@ -213,12 +255,120 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity {
         this.tradingEnabled = enabled;
     }
 
-    public ListTag getTradeOffers() {
-        return tradeOffers;
+    /**
+     * Возвращает список наборов сделок. Гарантированно содержит хотя бы один набор
+     * (если NPC никогда не настраивался — возвращает пустой список; вызывающий код
+     * должен быть готов к этому или использовать {@link #getFirstTradeSet()}).
+     */
+    public List<TradeSet> getTradeSets() {
+        return tradeSets;
     }
 
-    public void setTradeOffers(ListTag offers) {
-        this.tradeOffers = offers != null ? offers : new ListTag();
+    /**
+     * Заменяет текущие наборы сделок. Клампится до {@link #MAX_TRADE_SETS}.
+     * Если на входе пусто — создаётся один набор с именем "Default".
+     */
+    public void setTradeSets(List<TradeSet> sets) {
+        tradeSets.clear();
+        if (sets != null) {
+            int n = Math.min(sets.size(), MAX_TRADE_SETS);
+            for (int i = 0; i < n; i++) {
+                TradeSet s = sets.get(i);
+                if (s == null) continue;
+                tradeSets.add(new TradeSet(s.name, s.offers));
+            }
+        }
+        if (tradeSets.isEmpty()) {
+            tradeSets.add(new TradeSet(DEFAULT_TRADE_SET_NAME, new ListTag()));
+        }
+    }
+
+    @Nullable
+    public TradeSet getTradeSetByName(String name) {
+        if (name == null) return null;
+        for (TradeSet s : tradeSets) {
+            if (name.equals(s.name)) return s;
+        }
+        return null;
+    }
+
+    @Nullable
+    public TradeSet getFirstTradeSet() {
+        return tradeSets.isEmpty() ? null : tradeSets.get(0);
+    }
+
+    // -------------------------------------------------------------------------
+    // Расписание
+    // -------------------------------------------------------------------------
+
+    public List<ScheduleEntry> getSchedule() {
+        return schedule;
+    }
+
+    public void setSchedule(List<ScheduleEntry> entries) {
+        schedule.clear();
+        if (entries != null) {
+            int n = Math.min(entries.size(), MAX_SCHEDULE_ENTRIES);
+            for (int i = 0; i < n; i++) {
+                ScheduleEntry e = entries.get(i);
+                if (e != null) schedule.add(e);
+            }
+        }
+    }
+
+    public boolean isScheduleEnabled() {
+        return scheduleEnabled;
+    }
+
+    public void setScheduleEnabled(boolean enabled) {
+        this.scheduleEnabled = enabled;
+    }
+
+    /**
+     * Возвращает активный слот расписания, соответствующий текущему игровому времени,
+     * либо {@code null}, если расписание выключено или нет подходящих слотов.
+     */
+    @Nullable
+    public ScheduleEntry getActiveScheduleEntry() {
+        if (!scheduleEnabled || schedule.isEmpty()) return null;
+        int timeOfDay = (int) (this.level().getDayTime() % 24000L);
+        if (timeOfDay < 0) timeOfDay += 24000;
+        for (ScheduleEntry e : schedule) {
+            if (e.containsTime(timeOfDay)) return e;
+        }
+        return null;
+    }
+
+    /**
+     * Возвращает список сделок, соответствующий активному слоту расписания.
+     * Если расписание выключено или активный слот не связан с торговлей — возвращает
+     * сделки первого набора. Нужен как точка входа для будущего игрового экрана торговли.
+     */
+    public ListTag getActiveTradeOffers(@Nullable net.minecraft.server.level.ServerPlayer player) {
+        ScheduleEntry active = getActiveScheduleEntry();
+        if (active != null) {
+            String setName = null;
+            if (active.type == ScheduleEntry.Type.TRADE) {
+                setName = active.tradeSet;
+            } else if (active.type == ScheduleEntry.Type.ACTIVITY && active.interactTrade) {
+                setName = active.interactTradeSet;
+            }
+            if (setName != null && !setName.isEmpty()) {
+                TradeSet s = getTradeSetByName(setName);
+                if (s != null) return s.offers;
+            }
+        }
+        TradeSet first = getFirstTradeSet();
+        return first != null ? first.offers : new ListTag();
+    }
+
+    /**
+     * Заглушка под воспроизведение анимаций из слотов расписания.
+     * Полноценная интеграция с GeckoLib {@code triggerAnim} запланирована на v2.6.
+     */
+    public void playScheduleAnimation(String animName) {
+        // v2.5.0: placeholder. Триггер GeckoLib-анимации подключим в v2.6
+        // вместе с доработкой QuestNPCRenderer / QuestNPCGeoModel.
     }
 
     // -------------------------------------------------------------------------
@@ -420,6 +570,7 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity {
     protected void registerGoals() {
         QuestNPCLogger.debug("QuestNPCEntity.registerGoals() — регистрация ИИ-целей");
         this.goalSelector.addGoal(0, new FloatGoal(this));
+        this.goalSelector.addGoal(1, new ScheduleFollowGoal(this));
         this.goalSelector.addGoal(4, new LookAtPlayerGoal(this, Player.class, 8.0F));
         this.goalSelector.addGoal(5, new RandomLookAroundGoal(this));
     }
@@ -437,6 +588,10 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity {
         syncPathToClients();
 
         if (!isBound()) return;
+
+        // Safety net не должен мешать расписанию — оно может увести NPC
+        // за пределы патрульного радиуса по задумке.
+        if (isScheduleEnabled() && getActiveScheduleEntry() != null) return;
 
         BlockPos center = getBoundBlockPos();
         // Ушёл слишком далеко → срочный возврат к центру
@@ -474,10 +629,27 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity {
             tag.putString("ModelEntityType", modelType);
         }
 
-        // Торговля
+        // Торговля — новый формат: список именованных наборов
         tag.putBoolean("TradingEnabled", tradingEnabled);
-        if (!tradeOffers.isEmpty()) {
-            tag.put("TradeOffers", tradeOffers);
+        if (!tradeSets.isEmpty()) {
+            ListTag setsTag = new ListTag();
+            for (TradeSet set : tradeSets) {
+                CompoundTag setTag = new CompoundTag();
+                setTag.putString("Name", set.name != null ? set.name : DEFAULT_TRADE_SET_NAME);
+                setTag.put("Offers", set.offers != null ? set.offers : new ListTag());
+                setsTag.add(setTag);
+            }
+            tag.put("TradeSets", setsTag);
+        }
+
+        // Расписание
+        tag.putBoolean("ScheduleEnabled", scheduleEnabled);
+        if (!schedule.isEmpty()) {
+            ListTag scheduleTag = new ListTag();
+            for (ScheduleEntry e : schedule) {
+                scheduleTag.add(e.save());
+            }
+            tag.put("Schedule", scheduleTag);
         }
     }
 
@@ -505,12 +677,40 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity {
             setModelEntityType(tag.getString("ModelEntityType"));
         }
 
-        // Торговля
+        // Торговля — читаем новый формат, а при его отсутствии мигрируем v2.4.1 TradeOffers
         if (tag.contains("TradingEnabled")) {
             tradingEnabled = tag.getBoolean("TradingEnabled");
         }
-        if (tag.contains("TradeOffers")) {
-            tradeOffers = tag.getList("TradeOffers", Tag.TAG_COMPOUND);
+        tradeSets.clear();
+        if (tag.contains("TradeSets", Tag.TAG_LIST)) {
+            ListTag setsTag = tag.getList("TradeSets", Tag.TAG_COMPOUND);
+            for (int i = 0; i < setsTag.size() && i < MAX_TRADE_SETS; i++) {
+                CompoundTag setTag = setsTag.getCompound(i);
+                String name = setTag.getString("Name");
+                if (name.isEmpty()) name = DEFAULT_TRADE_SET_NAME;
+                ListTag setOffers = setTag.getList("Offers", Tag.TAG_COMPOUND);
+                tradeSets.add(new TradeSet(name, setOffers));
+            }
+        } else if (tag.contains("TradeOffers", Tag.TAG_LIST)) {
+            ListTag legacy = tag.getList("TradeOffers", Tag.TAG_COMPOUND);
+            tradeSets.add(new TradeSet(DEFAULT_TRADE_SET_NAME, legacy));
+            QuestNPCLogger.info("NPC {}: мигрированы {} сделок из legacy TradeOffers в набор '{}'",
+                    this.getId(), legacy.size(), DEFAULT_TRADE_SET_NAME);
+        }
+        if (tradeSets.isEmpty()) {
+            tradeSets.add(new TradeSet(DEFAULT_TRADE_SET_NAME, new ListTag()));
+        }
+
+        // Расписание
+        schedule.clear();
+        if (tag.contains("ScheduleEnabled")) {
+            scheduleEnabled = tag.getBoolean("ScheduleEnabled");
+        }
+        if (tag.contains("Schedule", Tag.TAG_LIST)) {
+            ListTag scheduleTag = tag.getList("Schedule", Tag.TAG_COMPOUND);
+            for (int i = 0; i < scheduleTag.size() && i < MAX_SCHEDULE_ENTRIES; i++) {
+                schedule.add(ScheduleEntry.load(scheduleTag.getCompound(i)));
+            }
         }
 
         QuestNPCLogger.debug(

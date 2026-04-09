@@ -14,11 +14,9 @@ import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.network.chat.Component;
-import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
-import net.minecraftforge.registries.ForgeRegistries;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -37,12 +35,15 @@ public class NPCTradingScreen extends Screen {
 
     // ─── Layout constants ────────────────────────────────────────────────
     private static final int PANEL_WIDTH    = 380;
-    private static final int PANEL_HEIGHT   = 296;
+    private static final int PANEL_HEIGHT   = 316;
     private static final int PADDING        = 10;
     private static final int VISIBLE_ROWS   = 4;
     private static final int MAX_OFFERS     = 10;
-    private static final int ROW_AREA_START = 76;  // relative to panelY
+    private static final int ROW_AREA_START = 96;  // relative to panelY
     private static final int ROW_HEIGHT     = 46;
+    private static final int ADD_BTN_Y_OFF  = 72;  // relative to panelY
+    private static final int COUNT_LABEL_Y_OFF = 74; // relative to panelY
+    private static final int DIVIDER_Y_OFF  = 92;  // relative to panelY
 
     // Column layout (relative to contentX)
     private static final int SLOT_SIZE    = 20;  // icon cell size
@@ -56,12 +57,45 @@ public class NPCTradingScreen extends Screen {
     private static final int DEL_OFF      = COL_STRIDE * 3 + 8;
     private static final int LIMIT_W      = 38;
 
+    // ─── Tab strip layout ────────────────────────────────────────────────
+    private static final int TAB_STRIP_Y_OFF   = 52; // относительно panelY
+    private static final int TAB_HEIGHT        = 16;
+    private static final int TAB_PAD_X         = 6;
+    private static final int TAB_ICON_W        = 10;
+    private static final int TAB_GAP           = 4;
+
     // ─── Data ────────────────────────────────────────────────────────────
     private final QuestNPCEntity npc;
     private final Screen parentScreen;
     private boolean tradingEnabled;
-    private final List<OfferData> offers = new ArrayList<>();
+
+    /**
+     * Имя каждого набора сделок (изменяется при переименовании).
+     * Паралельный массив к {@link #setDrafts}.
+     */
+    private final List<String> setNames = new ArrayList<>();
+
+    /** Буферы сделок по каждому набору. Индексы совпадают с {@link #setNames}. */
+    private final List<List<OfferData>> setDrafts = new ArrayList<>();
+
+    private int activeSetIndex = 0;
+    private int editingNameSetIndex = -1;
+    @Nullable
+    private EditBox nameEditBox;
+    private int deleteConfirmSetIndex = -1;
     private int scrollOffset = 0;
+
+    /**
+     * Активный список сделок — указывает на {@code setDrafts.get(activeSetIndex)}.
+     * Re-pointed в {@link #setActiveSetIndex(int)}; весь существующий код работает с этим полем.
+     */
+    private List<OfferData> offers;
+
+    /** Кэш геометрии вкладок, пересчитывается в render() — используется в mouseClicked(). */
+    private int[] tabX = new int[0];
+    private int[] tabW = new int[0];
+    private int addTabX = -1;
+    private int addTabW = 0;
 
     /** Флаг: refreshRows() в процессе — подавляет обратные вызовы responder */
     private boolean refreshing = false;
@@ -108,20 +142,50 @@ public class NPCTradingScreen extends Screen {
 
     // ─── Constructor ─────────────────────────────────────────────────────
 
-    public NPCTradingScreen(QuestNPCEntity npc, boolean tradingEnabled, ListTag tradeOffersTag,
+    public NPCTradingScreen(QuestNPCEntity npc, boolean tradingEnabled,
+                            List<QuestNPCEntity.TradeSet> tradeSets,
                             Screen parentScreen) {
         super(Component.translatable("gui.questnpc.trading.title"));
         this.npc = npc;
         this.tradingEnabled = tradingEnabled;
         this.parentScreen = parentScreen;
-        loadOffers(tradeOffersTag);
+        loadSets(tradeSets);
     }
 
     // ─── NBT helpers ─────────────────────────────────────────────────────
 
-    private void loadOffers(@Nullable ListTag tag) {
-        offers.clear();
-        if (tag == null) return;
+    private void loadSets(@Nullable List<QuestNPCEntity.TradeSet> sets) {
+        setNames.clear();
+        setDrafts.clear();
+        if (sets != null) {
+            for (QuestNPCEntity.TradeSet s : sets) {
+                if (s == null) continue;
+                setNames.add(s.name != null ? s.name : QuestNPCEntity.DEFAULT_TRADE_SET_NAME);
+                setDrafts.add(loadOffers(s.offers));
+                if (setNames.size() >= QuestNPCEntity.MAX_TRADE_SETS) break;
+            }
+        }
+        if (setNames.isEmpty()) {
+            setNames.add(QuestNPCEntity.DEFAULT_TRADE_SET_NAME);
+            setDrafts.add(new ArrayList<>());
+        }
+        activeSetIndex = 0;
+        offers = setDrafts.get(0);
+    }
+
+    private void setActiveSetIndex(int idx) {
+        if (idx < 0 || idx >= setDrafts.size()) return;
+        activeSetIndex = idx;
+        offers = setDrafts.get(idx);
+        scrollOffset = 0;
+        deleteConfirmSetIndex = -1;
+        refreshRows();
+        updateScrollButtons();
+    }
+
+    private List<OfferData> loadOffers(@Nullable ListTag tag) {
+        List<OfferData> list = new ArrayList<>();
+        if (tag == null) return list;
         for (int i = 0; i < tag.size() && i < MAX_OFFERS; i++) {
             CompoundTag offerTag = tag.getCompound(i);
             OfferData data = new OfferData();
@@ -137,13 +201,14 @@ public class NPCTradingScreen extends Screen {
             data.limitText = String.valueOf(offerTag.getInt("maxUses"));
             data.refilable = !offerTag.contains("refilable") || offerTag.getBoolean("refilable");
             data.uses = offerTag.getInt("uses");
-            offers.add(data);
+            list.add(data);
         }
+        return list;
     }
 
-    private ListTag buildOffersTag() {
+    private ListTag buildOffersTag(List<OfferData> offersList) {
         ListTag result = new ListTag();
-        for (OfferData data : offers) {
+        for (OfferData data : offersList) {
             if (!data.input1Valid() || !data.outputValid()) continue;
             CompoundTag tag = new CompoundTag();
             tag.put("input1", data.input1.serializeNBT());
@@ -156,6 +221,7 @@ public class NPCTradingScreen extends Screen {
         }
         return result;
     }
+
 
     // ─── Slot accessors ──────────────────────────────────────────────────
 
@@ -206,7 +272,7 @@ public class NPCTradingScreen extends Screen {
 
         // ── Add offer button ──────────────────────────────────────────
         addBtn = this.addRenderableWidget(new DarkButton(
-                panelX + PANEL_WIDTH - PADDING - 110, panelY + 52, 110, 16,
+                panelX + PANEL_WIDTH - PADDING - 110, panelY + ADD_BTN_Y_OFF, 110, 16,
                 Component.translatable("gui.questnpc.trading.add_offer"),
                 button -> addOffer(),
                 NPCMenuScreen.BTN_GREEN_BG, NPCMenuScreen.BTN_GREEN_HOVER, 0xFFFFFFFF
@@ -445,11 +511,92 @@ public class NPCTradingScreen extends Screen {
     }
 
     private void applySettings() {
+        commitNameEdit();
+
+        List<QuestNPCEntity.TradeSet> payload = new ArrayList<>();
+        for (int i = 0; i < setNames.size() && i < QuestNPCEntity.MAX_TRADE_SETS; i++) {
+            String name = setNames.get(i);
+            if (name == null || name.isEmpty()) name = QuestNPCEntity.DEFAULT_TRADE_SET_NAME;
+            ListTag listTag = buildOffersTag(setDrafts.get(i));
+            payload.add(new QuestNPCEntity.TradeSet(name, listTag));
+        }
+
         ModNetwork.INSTANCE.sendToServer(
                 new UpdateTradingEnabledPacket(npc.getId(), tradingEnabled));
         ModNetwork.INSTANCE.sendToServer(
-                new UpdateTradeOffersPacket(npc.getId(), buildOffersTag()));
+                new UpdateTradeOffersPacket(npc.getId(), payload));
+
+        // Обновляем кэш родительского экрана — иначе повторный вход в Trading
+        // покажет устаревший снапшот из OpenNPCMenuPacket (баг v2.5.0).
+        if (parentScreen instanceof NPCMenuScreen parentMenu) {
+            parentMenu.updateTradingState(tradingEnabled, payload);
+        }
+
         Minecraft.getInstance().setScreen(parentScreen);
+    }
+
+    // ─── Tab operations ──────────────────────────────────────────────────
+
+    private void addSet() {
+        if (setNames.size() >= QuestNPCEntity.MAX_TRADE_SETS) return;
+        // Сгенерировать уникальное имя: "Default N"
+        String base = QuestNPCEntity.DEFAULT_TRADE_SET_NAME;
+        String candidate = base;
+        int n = 2;
+        while (setNames.contains(candidate)) {
+            candidate = base + " " + n++;
+        }
+        setNames.add(candidate);
+        setDrafts.add(new ArrayList<>());
+        setActiveSetIndex(setNames.size() - 1);
+    }
+
+    private void deleteSet(int index) {
+        if (setNames.size() <= 1) return;
+        if (index < 0 || index >= setNames.size()) return;
+        setNames.remove(index);
+        setDrafts.remove(index);
+        deleteConfirmSetIndex = -1;
+        int newActive = Math.max(0, Math.min(activeSetIndex, setNames.size() - 1));
+        setActiveSetIndex(newActive);
+    }
+
+    private void beginRename(int index) {
+        if (index < 0 || index >= setNames.size()) return;
+        commitNameEdit();
+        editingNameSetIndex = index;
+        // Создаём EditBox над вкладкой — позиция будет обновлена в render()/init()
+        int boxX = panelX + PADDING;
+        int boxY = panelY + TAB_STRIP_Y_OFF;
+        nameEditBox = new EditBox(this.font, boxX, boxY, 90, TAB_HEIGHT - 2,
+                Component.literal(""));
+        nameEditBox.setMaxLength(32);
+        nameEditBox.setValue(setNames.get(index));
+        nameEditBox.setBordered(true);
+        nameEditBox.setResponder(text -> { /* no-op */ });
+        this.addRenderableWidget(nameEditBox);
+        this.setFocused(nameEditBox);
+        nameEditBox.setFocused(true);
+    }
+
+    private void commitNameEdit() {
+        if (editingNameSetIndex < 0 || nameEditBox == null) return;
+        String val = nameEditBox.getValue().trim();
+        if (!val.isEmpty() && editingNameSetIndex < setNames.size()) {
+            if (val.length() > 32) val = val.substring(0, 32);
+            setNames.set(editingNameSetIndex, val);
+        }
+        removeWidget(nameEditBox);
+        nameEditBox = null;
+        editingNameSetIndex = -1;
+    }
+
+    private void cancelNameEdit() {
+        if (nameEditBox != null) {
+            removeWidget(nameEditBox);
+            nameEditBox = null;
+        }
+        editingNameSetIndex = -1;
     }
 
     // ─── Rendering ───────────────────────────────────────────────────────
@@ -465,13 +612,16 @@ public class NPCTradingScreen extends Screen {
                 panelX + PANEL_WIDTH / 2, panelY + 6, NPCMenuScreen.TEXT_WHITE & 0x00FFFFFF);
         g.fill(panelX + 1, panelY + 22, panelX + PANEL_WIDTH - 1, panelY + 23, NPCMenuScreen.BORDER);
         g.fill(panelX + 1, panelY + 48, panelX + PANEL_WIDTH - 1, panelY + 49, NPCMenuScreen.BORDER);
-        g.fill(panelX + 1, panelY + 72, panelX + PANEL_WIDTH - 1, panelY + 73, NPCMenuScreen.BORDER);
+        g.fill(panelX + 1, panelY + DIVIDER_Y_OFF, panelX + PANEL_WIDTH - 1, panelY + DIVIDER_Y_OFF + 1, NPCMenuScreen.BORDER);
 
-        // 3. Offer count label
+        // 3. Tab strip for trade sets
+        renderTabStrip(g, mouseX, mouseY);
+
+        // 4. Offer count label
         String countStr = String.format(
                 Component.translatable("gui.questnpc.trading.offers_count").getString(),
                 offers.size());
-        g.drawString(this.font, countStr, cx, panelY + 54,
+        g.drawString(this.font, countStr, cx, panelY + COUNT_LABEL_Y_OFF,
                 NPCMenuScreen.TEXT_WHITE & 0x00FFFFFF, false);
 
         // 4. Row separators + limit labels
@@ -573,6 +723,153 @@ public class NPCTradingScreen extends Screen {
     @Override
     public boolean isPauseScreen() {
         return false;
+    }
+
+    // ─── Tab strip rendering / input ─────────────────────────────────────
+
+    private void renderTabStrip(GuiGraphics g, int mouseX, int mouseY) {
+        int stripY = panelY + TAB_STRIP_Y_OFF;
+        int x = panelX + PADDING;
+
+        tabX = new int[setNames.size()];
+        tabW = new int[setNames.size()];
+
+        for (int i = 0; i < setNames.size(); i++) {
+            String name = setNames.get(i);
+            int textW = this.font.width(name);
+            int iconsW = TAB_ICON_W * 2 + 2; // ✎ + ×
+            int w = TAB_PAD_X * 2 + textW + iconsW + 4;
+            tabX[i] = x;
+            tabW[i] = w;
+
+            boolean active = (i == activeSetIndex);
+            boolean hovered = mouseX >= x && mouseX < x + w && mouseY >= stripY && mouseY < stripY + TAB_HEIGHT;
+
+            int bg;
+            if (active) {
+                bg = NPCMenuScreen.BTN_GREEN_BG;
+            } else {
+                bg = hovered ? NPCMenuScreen.BTN_GRAY_HOVER : NPCMenuScreen.BTN_GRAY_BG;
+            }
+            g.fill(x, stripY, x + w, stripY + TAB_HEIGHT, bg);
+            NPCMenuScreen.drawOutlineRect(g, x, stripY, w, TAB_HEIGHT, NPCMenuScreen.BORDER);
+
+            // Имя набора (или скрываем, если редактируется — EditBox показан поверх)
+            if (i != editingNameSetIndex) {
+                int textColor = active ? 0xFFFFFFFF : (NPCMenuScreen.TEXT_WHITE & 0x00FFFFFF);
+                g.drawString(this.font, name, x + TAB_PAD_X, stripY + 4, textColor, false);
+            } else if (nameEditBox != null) {
+                nameEditBox.setX(x + 1);
+                nameEditBox.setY(stripY + 1);
+                nameEditBox.setWidth(Math.max(60, textW + 20));
+            }
+
+            // ✎ и × иконки
+            int pencilX = x + w - TAB_PAD_X - TAB_ICON_W * 2 - 2;
+            int closeX  = x + w - TAB_PAD_X - TAB_ICON_W;
+
+            int pencilColor = (NPCMenuScreen.TEXT_GRAY & 0x00FFFFFF);
+            g.drawString(this.font, "\u270E", pencilX, stripY + 4, pencilColor, false);
+
+            boolean canDelete = setNames.size() > 1;
+            int closeColor;
+            if (!canDelete) {
+                closeColor = (NPCMenuScreen.TEXT_DARK_GRAY & 0x00FFFFFF);
+            } else if (i == deleteConfirmSetIndex) {
+                closeColor = (NPCMenuScreen.TEXT_RED & 0x00FFFFFF);
+            } else {
+                closeColor = (NPCMenuScreen.TEXT_GRAY & 0x00FFFFFF);
+            }
+            g.drawString(this.font, "\u00D7", closeX, stripY + 4, closeColor, false);
+
+            x += w + TAB_GAP;
+        }
+
+        // "+" кнопка добавления набора
+        if (setNames.size() < QuestNPCEntity.MAX_TRADE_SETS) {
+            int addW = TAB_HEIGHT + 4;
+            addTabX = x;
+            addTabW = addW;
+            boolean hovered = mouseX >= x && mouseX < x + addW && mouseY >= stripY && mouseY < stripY + TAB_HEIGHT;
+            int bg = hovered ? NPCMenuScreen.BTN_GREEN_HOVER : NPCMenuScreen.BTN_GREEN_BG;
+            g.fill(x, stripY, x + addW, stripY + TAB_HEIGHT, bg);
+            NPCMenuScreen.drawOutlineRect(g, x, stripY, addW, TAB_HEIGHT, NPCMenuScreen.BORDER);
+            g.drawCenteredString(this.font, "+", x + addW / 2, stripY + 4, 0xFFFFFF);
+        } else {
+            addTabX = -1;
+            addTabW = 0;
+        }
+    }
+
+    @Override
+    public boolean mouseClicked(double mouseX, double mouseY, int button) {
+        int stripY = panelY + TAB_STRIP_Y_OFF;
+        if (mouseY >= stripY && mouseY < stripY + TAB_HEIGHT) {
+            // Клик по вкладке
+            for (int i = 0; i < tabX.length; i++) {
+                int x = tabX[i];
+                int w = tabW[i];
+                if (mouseX < x || mouseX >= x + w) continue;
+
+                int pencilLeft = x + w - TAB_PAD_X - TAB_ICON_W * 2 - 2;
+                int closeLeft  = x + w - TAB_PAD_X - TAB_ICON_W;
+
+                if (mouseX >= closeLeft) {
+                    if (setNames.size() <= 1) return true;
+                    if (deleteConfirmSetIndex == i) {
+                        deleteSet(i);
+                    } else {
+                        deleteConfirmSetIndex = i;
+                    }
+                    return true;
+                }
+                if (mouseX >= pencilLeft) {
+                    beginRename(i);
+                    return true;
+                }
+                // Клик на имя → переключение
+                if (i != activeSetIndex) {
+                    commitNameEdit();
+                    deleteConfirmSetIndex = -1;
+                    setActiveSetIndex(i);
+                }
+                return true;
+            }
+            // Клик по "+"
+            if (addTabX >= 0 && mouseX >= addTabX && mouseX < addTabX + addTabW) {
+                commitNameEdit();
+                addSet();
+                return true;
+            }
+        }
+
+        // Если редактируем имя и клик не по editBox — коммитим
+        if (nameEditBox != null && editingNameSetIndex >= 0) {
+            boolean hitBox = mouseX >= nameEditBox.getX()
+                    && mouseX < nameEditBox.getX() + nameEditBox.getWidth()
+                    && mouseY >= nameEditBox.getY()
+                    && mouseY < nameEditBox.getY() + nameEditBox.getHeight();
+            if (!hitBox) {
+                commitNameEdit();
+            }
+        }
+
+        return super.mouseClicked(mouseX, mouseY, button);
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (editingNameSetIndex >= 0 && nameEditBox != null) {
+            if (keyCode == 257 || keyCode == 335) { // Enter / KP Enter
+                commitNameEdit();
+                return true;
+            }
+            if (keyCode == 256) { // Esc
+                cancelNameEdit();
+                return true;
+            }
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     // ─── SlotWidget inner class ──────────────────────────────────────────

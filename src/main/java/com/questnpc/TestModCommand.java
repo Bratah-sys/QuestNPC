@@ -12,7 +12,7 @@ import java.util.List;
 
 /**
  * Команда /test_mod — запускает проверку всех зависимостей и выводит результат в чат.
- * Доступна всем игрокам (permissionLevel = 0).
+ * Доступна только операторам (permissionLevel = 2), чтобы обычные игроки не видели отладочный вывод.
  */
 public final class TestModCommand {
 
@@ -24,7 +24,7 @@ public final class TestModCommand {
     public static void register(CommandDispatcher<CommandSourceStack> dispatcher) {
         dispatcher.register(
                 Commands.literal("test_mod")
-                        .requires(source -> source.hasPermission(0))
+                        .requires(source -> source.hasPermission(2))
                         .executes(context -> execute(context.getSource()))
         );
         QuestNPCLogger.info("Команда /test_mod зарегистрирована");
