@@ -1,9 +1,11 @@
 package com.questnpc.entity.ai;
 
+import com.questnpc.QuestNPCLogger;
 import com.questnpc.entity.QuestNPCEntity;
 import com.questnpc.entity.schedule.ScheduleEntry;
 import net.minecraft.core.BlockPos;
 import net.minecraft.world.entity.ai.goal.Goal;
+import net.minecraft.world.level.pathfinder.Path;
 
 import java.util.EnumSet;
 
@@ -19,10 +21,13 @@ public class ScheduleFollowGoal extends Goal {
 
     private static final double REACH_DIST_SQ = 2.25; // 1.5 блока
     private static final int RECOMPUTE_INTERVAL = 20; // тиков
+    private static final int UNREACHABLE_RETRY_TICKS = 100; // 5 сек — кулдаун между попытками после провала пути
 
     private final QuestNPCEntity mob;
     private ScheduleEntry currentEntry;
     private int recomputeCooldown = 0;
+    private int unreachableCooldown = 0;
+    private BlockPos lastWarnedPos = null;
 
     public ScheduleFollowGoal(QuestNPCEntity mob) {
         this.mob = mob;
@@ -45,6 +50,8 @@ public class ScheduleFollowGoal extends Goal {
     public void start() {
         currentEntry = mob.getActiveScheduleEntry();
         recomputeCooldown = 0;
+        unreachableCooldown = 0;
+        lastWarnedPos = null;
     }
 
     @Override
@@ -62,7 +69,23 @@ public class ScheduleFollowGoal extends Goal {
         double distSq = mob.distanceToSqr(cx, cy, cz);
 
         if (distSq > REACH_DIST_SQ) {
-            mob.getNavigation().moveTo(cx, cy, cz, 1.0D);
+            // v2.5.4 (BUG-010): проверяем достижимость пути с retry-кулдауном,
+            // чтобы не спамить навигацию каждый тик, если точка недостижима.
+            if (unreachableCooldown > 0) {
+                unreachableCooldown--;
+                return;
+            }
+            Path path = mob.getNavigation().createPath(p, 0);
+            if (path == null || !path.canReach()) {
+                unreachableCooldown = UNREACHABLE_RETRY_TICKS;
+                if (lastWarnedPos == null || !lastWarnedPos.equals(p)) {
+                    lastWarnedPos = p.immutable();
+                    QuestNPCLogger.warn("ScheduleFollowGoal: NPC {} не может построить путь к слоту на [{}, {}, {}]",
+                            mob.getId(), p.getX(), p.getY(), p.getZ());
+                }
+                return;
+            }
+            mob.getNavigation().moveTo(path, 1.0D);
         } else {
             mob.getNavigation().stop();
             mob.getLookControl().setLookAt(cx, cy + mob.getEyeHeight(), cz);
@@ -77,5 +100,7 @@ public class ScheduleFollowGoal extends Goal {
     public void stop() {
         mob.getNavigation().stop();
         currentEntry = null;
+        unreachableCooldown = 0;
+        lastWarnedPos = null;
     }
 }

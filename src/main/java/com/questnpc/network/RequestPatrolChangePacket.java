@@ -42,6 +42,13 @@ public class RequestPatrolChangePacket {
             Entity entity = player.serverLevel().getEntity(packet.entityId);
             if (!(entity instanceof QuestNPCEntity npc)) return;
 
+            // Проверка серверной сессии (v2.5.4, BUG-002)
+            if (!NPCMenuSessionManager.getInstance().isSessionActive(player.getUUID(), packet.entityId)) {
+                QuestNPCLogger.warn("Игрок {} не имеет активной сессии для NPC {} — пакет RequestPatrolChange отклонён",
+                        player.getName().getString(), packet.entityId);
+                return;
+            }
+
             // Проверка: в руке палка
             ItemStack heldItem = player.getMainHandItem();
             if (!heldItem.is(Items.STICK)) return;

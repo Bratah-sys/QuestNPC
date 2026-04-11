@@ -314,6 +314,10 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity {
                 if (e != null) schedule.add(e);
             }
         }
+        // v2.5.4 (BUG-006): останавливаем навигацию, чтобы NPC не продолжал идти к точке удалённого слота.
+        if (!this.level().isClientSide) {
+            this.getNavigation().stop();
+        }
     }
 
     public boolean isScheduleEnabled() {
@@ -322,6 +326,10 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity {
 
     public void setScheduleEnabled(boolean enabled) {
         this.scheduleEnabled = enabled;
+        // v2.5.4 (BUG-006): останавливаем навигацию при смене состояния расписания.
+        if (!this.level().isClientSide) {
+            this.getNavigation().stop();
+        }
     }
 
     /**

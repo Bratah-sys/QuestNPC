@@ -1,16 +1,15 @@
 package com.questnpc.network;
 
-import com.questnpc.client.gui.WIPScreen;
-import net.minecraft.client.Minecraft;
 import net.minecraft.network.FriendlyByteBuf;
-import net.minecraft.network.chat.Component;
 import net.minecraftforge.network.NetworkEvent;
 
 import java.util.function.Supplier;
 
 /**
  * S2C-пакет: открывает экран торговли для игрока.
- * Сейчас открывает заглушку WIPScreen с ключом gui.questnpc.trading.wip.
+ *
+ * <p>WIP-001: будет использован для player-facing trading. Сейчас не отправляется ниоткуда
+ * и handler пуст — до реализации настоящего торгового флоу через {@code Merchant}.
  */
 public class OpenTradingScreenPacket {
 
@@ -18,6 +17,10 @@ public class OpenTradingScreenPacket {
 
     public OpenTradingScreenPacket(int entityId) {
         this.entityId = entityId;
+    }
+
+    public int getEntityId() {
+        return entityId;
     }
 
     public static void encode(OpenTradingScreenPacket packet, FriendlyByteBuf buf) {
@@ -30,11 +33,7 @@ public class OpenTradingScreenPacket {
 
     public static void handle(OpenTradingScreenPacket packet, Supplier<NetworkEvent.Context> ctx) {
         ctx.get().enqueueWork(() -> {
-            Minecraft mc = Minecraft.getInstance();
-            mc.setScreen(new WIPScreen(
-                    mc.screen,
-                    Component.translatable("gui.questnpc.trading.wip")
-            ));
+            // TODO (WIP-001): открыть player-facing торговый экран, когда будет реализован.
         });
         ctx.get().setPacketHandled(true);
     }

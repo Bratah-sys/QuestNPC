@@ -42,6 +42,13 @@ public class DeleteNPCPacket {
                 return;
             }
 
+            // Проверка серверной сессии (v2.5.4, BUG-003) — в дополнение к дистанции
+            if (!NPCMenuSessionManager.getInstance().isSessionActive(player.getUUID(), packet.entityId)) {
+                QuestNPCLogger.warn("Игрок {} не имеет активной сессии для NPC {} — пакет Delete отклонён",
+                        player.getName().getString(), packet.entityId);
+                return;
+            }
+
             // Проверка расстояния (≤16 блоков) — Delete остаётся деструктивной операцией
             if (player.distanceToSqr(npc) > 256.0) {
                 QuestNPCLogger.warn("Игрок {} слишком далеко от NPC {} для удаления",
