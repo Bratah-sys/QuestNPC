@@ -584,7 +584,20 @@ public class NPCTradingScreen extends Screen {
         String val = nameEditBox.getValue().trim();
         if (!val.isEmpty() && editingNameSetIndex < setNames.size()) {
             if (val.length() > 32) val = val.substring(0, 32);
-            setNames.set(editingNameSetIndex, val);
+            // v2.5.5 (BUG-013): проверка уникальности имени набора.
+            boolean collision = false;
+            for (int i = 0; i < setNames.size(); i++) {
+                if (i != editingNameSetIndex && setNames.get(i).equals(val)) {
+                    collision = true;
+                    break;
+                }
+            }
+            if (!collision) {
+                setNames.set(editingNameSetIndex, val);
+            } else if (Minecraft.getInstance().player != null) {
+                Minecraft.getInstance().player.sendSystemMessage(
+                        Component.translatable("message.questnpc.trade_set_name_taken"));
+            }
         }
         removeWidget(nameEditBox);
         nameEditBox = null;

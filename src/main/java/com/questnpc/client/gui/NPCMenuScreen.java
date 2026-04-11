@@ -131,9 +131,10 @@ public class NPCMenuScreen extends Screen {
     protected void init() {
         super.init();
 
-        // Сброс флагов при возврате из подэкрана
+        // Сброс флага при возврате из подэкрана.
+        // v2.5.5 (BUG-012): closeSent НЕ сбрасываем — он инициализируется один раз
+        // в декларации поля, чтобы ресайз окна не приводил к повторному CloseMenuPacket.
         navigatingToSubScreen = false;
-        closeSent = false;
 
         panelX = (this.width - TOTAL_WIDTH) / 2;
         panelY = (this.height - TOTAL_HEIGHT) / 2;

@@ -250,6 +250,17 @@ public class ItemCatalogScreen extends Screen {
                 CACHED_NAMESPACES.size(), total);
     }
 
+    /**
+     * v2.5.5 (BUG-009): инвалидация статического кэша. Вызывается
+     * {@code ResourceManagerReloadListener} при F3+T — следующий заход в
+     * каталог пересоберёт индекс через {@link #buildItemIndex()}.
+     */
+    public static void invalidateCache() {
+        CACHED_ENTRIES.clear();
+        CACHED_NAMESPACES.clear();
+        CACHED_DISPLAY_NAMES.clear();
+    }
+
     private void filterEntries() {
         if (modNamespaces.isEmpty()) return;
 

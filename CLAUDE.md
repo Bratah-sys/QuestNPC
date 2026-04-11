@@ -7,7 +7,7 @@
 
 ## Текущий статус
 
-**Версия:** `0.3.1-alpha-menurefactor-v2.5.4` (ветка `feature/menu-rework`)
+**Версия:** `0.3.1-alpha-menurefactor-v2.5.5` (ветка `feature/menu-rework`)
 **Стек:** Minecraft 1.20.1 · Forge 47.2.0 · Java 17 · Gradle 8.7 · ForgeGradle 6.x
 
 ### Работающие фичи (admin-side, палка + ПКМ)
@@ -33,7 +33,8 @@
 
 ## Известные баги (подробности: `roadmap-v2.5.2.md`)
 
-Исправлено в **v2.5.4**: BUG-001, BUG-002, BUG-003, BUG-006, BUG-010 (5 штук).
+Исправлено в **v2.5.4**: BUG-001, BUG-002, BUG-003, BUG-006, BUG-010.
+Исправлено в **v2.5.5**: BUG-009, BUG-011, BUG-012, BUG-013, BUG-014.
 
 | ID | Severity | Файл | Суть |
 |---|---|---|---|
@@ -41,11 +42,6 @@
 | BUG-005 | low | `entity/ai/ScheduleFollowGoal.java` | `Flag.LOOK` конфликтует с `LookAtPlayerGoal` — приоритет 1 навсегда блокирует взгляд |
 | BUG-007 | low | `network/RequestPatrolChangePacket.java` | Silent reject при отсутствии палки — игрок не получает фидбек |
 | BUG-008 | low | `network/RenameNPCPacket.java` | Нет sanitization §-кодов — можно впихнуть цветовые форматы |
-| BUG-009 | low | `client/gui/ItemCatalogScreen.java:77-79` | `static final CACHED_ENTRIES/NAMESPACES/DISPLAY_NAMES` — никогда не чистятся, утечка при разных resource packs |
-| BUG-011 | low | `entity/QuestNPCEntity.java` | `createAttributes` ставит `MOVEMENT_SPEED=0.35`, а `DEFAULT_PATROL_SPEED=0.3` — расхождение дефолтов |
-| BUG-012 | low | `client/gui/NPCMenuScreen.java:136` | `closeSent=false` в `init()` — при ресайзе окна сессия закрывается повторно |
-| BUG-013 | low | `entity/QuestNPCEntity.java` trade sets | Нет проверки уникальности имени набора при переименовании |
-| BUG-014 | trivial | `entity/QuestNPCEntity.java` | `clearBoundBlock()` — private, нигде не вызывается (dead code) |
 
 **Release blocker:** WIP-001 (player-side trading). BUG-002 (обход PatrolChange без сессии) закрыт в v2.5.4.
 
@@ -95,18 +91,18 @@
 
 ## Последняя сессия
 
-**2026-04-12 — v2.5.4** — патч 5 багов.
+**2026-04-12 — v2.5.5** — патч 5 low-severity багов (cheap wins).
 
 **Сделано:**
-- **BUG-002** (high) — в `RequestPatrolChangePacket.handle` добавлена проверка `NPCMenuSessionManager.isSessionActive(...)` по образцу пакетов 4/5/7; спец-палка больше не выдаётся без открытого меню
-- **BUG-003** (medium) — в `DeleteNPCPacket.handle` добавлена проверка сессии В ДОПОЛНЕНИЕ к существующей проверке дистанции ≤16 блоков
-- **BUG-006** (medium) — `setSchedule()`/`setScheduleEnabled()` теперь вызывают `getNavigation().stop()` (server-only), NPC не инерционно дрейфует к удалённому слоту
-- **BUG-010** (medium) — `ScheduleFollowGoal.tick()` строит `Path` через `createPath(BlockPos,0)` и проверяет `canReach()`; при провале — одноразовый warning + 5-сек `UNREACHABLE_RETRY_TICKS` кулдаун
-- **BUG-001** (medium) — handler `OpenTradingScreenPacket` очищен от `WIPScreen`, пакет оставлен как будущий канал WIP-001 (id 11, регистрация не тронута)
-- Версия bumped v2.5.3 → v2.5.4: `gradle.properties`, `QuestNPC.MOD_VERSION`, `en_us.json`, `ru_ru.json`
+- **BUG-009** — добавлен `ItemCatalogScreen.invalidateCache()` + `ResourceManagerReloadListener` через `RegisterClientReloadListenersEvent` в `QuestNPC.java`. F3+T теперь очищает статический кэш каталога, следующий open пересобирает индекс.
+- **BUG-011** — `DEFAULT_PATROL_SPEED` изменён с `0.3D` на `0.35D` — совпадает с `createAttributes().MOVEMENT_SPEED`. Устранён рассинхрон между новорождённым NPC и загруженным из NBT.
+- **BUG-012** — из `NPCMenuScreen.init()` убран `closeSent = false;`. Поле инициализируется один раз в декларации, ресайз окна больше не реанимирует флаг → `CloseMenuPacket` не отправляется повторно.
+- **BUG-013** — в `NPCTradingScreen.commitNameEdit()` добавлен скан `setNames` на коллизию; на дубликат — revert + `message.questnpc.trade_set_name_taken` (новый lang key ru/en).
+- **BUG-014** — `QuestNPCEntity.clearBoundBlock()` удалён целиком (zero callers).
+- Версия bumped v2.5.4 → v2.5.5: `gradle.properties`, `QuestNPC.MOD_VERSION`, `en_us.json`, `ru_ru.json`.
 
 **Осталось:**
 - WIP-001 (player-side trading screen) — главный блокер v2.6
-- 9 low-severity багов (BUG-004, 005, 007, 008, 009, 011, 012, 013, 014)
+- 4 low-severity бага (BUG-004, 005, 007, 008)
 - WIP-004 (GeckoLib triggerAnim из Type.ANIMATION) — требует edge-trigger обёртки вокруг BUG-004
 - Остальные заглушки — по приоритету из roadmap §5

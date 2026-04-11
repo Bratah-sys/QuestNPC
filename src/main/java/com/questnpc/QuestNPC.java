@@ -3,6 +3,7 @@ package com.questnpc;
 import com.questnpc.block.ModBlocks;
 import com.questnpc.client.ModKeyBindings;
 import com.questnpc.client.debug.NPCDebugRenderer;
+import com.questnpc.client.gui.ItemCatalogScreen;
 import com.questnpc.client.model.CustomModelManager;
 import com.questnpc.client.model.CustomModelPackResources;
 import com.questnpc.commands.NpcVisCommand;
@@ -24,10 +25,12 @@ import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
+import net.minecraftforge.client.event.RegisterClientReloadListenersEvent;
 import net.minecraftforge.event.AddPackFindersEvent;
 import net.minecraft.server.packs.PackType;
 import net.minecraft.server.packs.repository.Pack;
 import net.minecraft.server.packs.repository.PackSource;
+import net.minecraft.server.packs.resources.ResourceManagerReloadListener;
 import net.minecraft.network.chat.Component;
 
 /**
@@ -38,7 +41,7 @@ import net.minecraft.network.chat.Component;
 public class QuestNPC {
 
     public static final String MOD_ID = "questnpc";
-    public static final String MOD_VERSION = "0.3.1-alpha-menurefactor-v2.5.4";
+    public static final String MOD_VERSION = "0.3.1-alpha-menurefactor-v2.5.5";
 
     public QuestNPC() {
         QuestNPCLogger.info("Инициализация мода QuestNPC v{}", MOD_VERSION);
@@ -48,6 +51,7 @@ public class QuestNPC {
         modBus.addListener(this::onCommonSetup);
         modBus.addListener(this::onClientSetup);
         modBus.addListener(this::onAddPackFinders);
+        modBus.addListener(this::onRegisterClientReloadListeners);
         modBus.addListener(ModKeyBindings::register);
 
         // Регистрация блоков, предметов, сущностей и креативной вкладки
@@ -113,6 +117,15 @@ public class QuestNPC {
                 QuestNPCLogger.info("Зарегистрирован ресурс-пак для кастомных моделей");
             }
         });
+    }
+
+    /**
+     * v2.5.5 (BUG-009): регистрируем слушатель перезагрузки ресурсов (F3+T),
+     * чтобы инвалидировать статический кэш каталога предметов.
+     */
+    private void onRegisterClientReloadListeners(final RegisterClientReloadListenersEvent event) {
+        event.registerReloadListener((ResourceManagerReloadListener)
+                rm -> ItemCatalogScreen.invalidateCache());
     }
 
     /**

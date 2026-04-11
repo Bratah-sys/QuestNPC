@@ -55,7 +55,7 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity {
     public static final int PATROL_RADIUS = 16;
 
     // --- Дефолтные значения настроек ---
-    public static final double DEFAULT_PATROL_SPEED = 0.3D;
+    public static final double DEFAULT_PATROL_SPEED = 0.35D;
     public static final int DEFAULT_DELAY_MIN = 3;
     public static final int DEFAULT_DELAY_MAX = 10;
 
@@ -193,11 +193,6 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity {
 
     public void setBoundBlockPos(BlockPos pos) {
         this.entityData.set(DATA_BOUND_BLOCK, Optional.of(pos));
-    }
-
-    private void clearBoundBlock() {
-        this.entityData.set(DATA_BOUND_BLOCK, Optional.empty());
-        this.entityData.set(DATA_TARGET_POS, Optional.empty());
     }
 
     public static int getPatrolRadius() {
