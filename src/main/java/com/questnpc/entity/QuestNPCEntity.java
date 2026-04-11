@@ -15,12 +15,19 @@ import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.sounds.SoundEvent;
+import net.minecraft.world.InteractionHand;
+import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.EntityDimensions;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.Pose;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.item.trading.Merchant;
+import net.minecraft.world.item.trading.MerchantOffer;
+import net.minecraft.world.item.trading.MerchantOffers;
 import net.minecraftforge.registries.ForgeRegistries;
 import net.minecraft.world.entity.ai.goal.FloatGoal;
 import net.minecraft.world.entity.ai.goal.LookAtPlayerGoal;
@@ -49,7 +56,7 @@ import java.util.Optional;
  * Квестовый NPC — PathfinderMob с ручной привязкой к точке патруля.
  * По умолчанию стоит на месте. Патруль активируется через меню (палка + спец-палка).
  */
-public class QuestNPCEntity extends PathfinderMob implements GeoEntity {
+public class QuestNPCEntity extends PathfinderMob implements GeoEntity, Merchant {
 
     /** Радиус патруля вокруг привязанного блока. */
     public static final int PATROL_RADIUS = 16;
@@ -88,11 +95,96 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity {
     private boolean tradingEnabled = false;
     private final List<TradeSet> tradeSets = new ArrayList<>();
 
+    private Player tradingPlayer;
+    private MerchantOffers tradeOffers;
+
     // --- Расписание ---
     public static final int MAX_SCHEDULE_ENTRIES = 10;
 
     private final List<ScheduleEntry> schedule = new ArrayList<>();
     private boolean scheduleEnabled = false;
+
+    @Override
+    public void setTradingPlayer(@org.jetbrains.annotations.Nullable Player player) {
+        this.tradingPlayer = player;
+    }
+
+    @Override
+    public @org.jetbrains.annotations.Nullable Player getTradingPlayer() {
+        return this.tradingPlayer;
+    }
+
+    @Override
+    public MerchantOffers getOffers() {
+        if (!this.level().isClientSide && this.tradingPlayer instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
+
+            net.minecraft.nbt.ListTag nbtOffers = this.getActiveTradeOffers(serverPlayer);
+
+            net.minecraft.world.item.trading.MerchantOffers newOffers = new net.minecraft.world.item.trading.MerchantOffers();
+
+            for (int i = 0; i < nbtOffers.size(); i++) {
+                net.minecraft.nbt.CompoundTag tag = nbtOffers.getCompound(i);
+
+                // Создаем копию, чтобы не испортить исходные данные, и переименовываем ключи
+                net.minecraft.nbt.CompoundTag vanillaTag = tag.copy();
+
+                if (tag.contains("input1")) vanillaTag.put("buy", tag.get("input1"));
+                if (tag.contains("input2")) vanillaTag.put("buyB", tag.get("input2"));
+                if (tag.contains("output")) vanillaTag.put("sell", tag.get("output"));
+
+                // но убедимся, что лимиты на месте
+                if (!tag.contains("maxUses")) vanillaTag.putInt("maxUses", 999);
+
+                newOffers.add(new net.minecraft.world.item.trading.MerchantOffer(vanillaTag));
+            }
+
+            this.tradeOffers = newOffers;
+        }
+        return this.tradeOffers != null ? this.tradeOffers : new net.minecraft.world.item.trading.MerchantOffers();
+    }
+
+    @Override
+    public void overrideOffers(MerchantOffers merchantOffers) {
+
+    }
+
+    @Override
+    public void notifyTrade(net.minecraft.world.item.trading.MerchantOffer offer) {
+        offer.assemble(); // Чтобы сделка засчитывалась
+        if (!this.level().isClientSide) {
+            QuestNPCLogger.debug("Сделка совершена!");
+        }
+    }
+
+    @Override
+    public void notifyTradeUpdated(ItemStack itemStack) {
+
+    }
+
+    @Override
+    public int getVillagerXp() {
+        return 0;
+    }
+
+    @Override
+    public void overrideXp(int i) {
+
+    }
+
+    @Override
+    public boolean showProgressBar() {
+        return false;
+    }
+
+    @Override
+    public SoundEvent getNotifyTradeSound() {
+        return null;
+    }
+
+    @Override
+    public boolean isClientSide() {
+        return this.level().isClientSide();
+    }
 
     /**
      * Именованный набор сделок. У одного NPC может быть до {@link #MAX_TRADE_SETS} наборов.
@@ -578,6 +670,32 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity {
     // -------------------------------------------------------------------------
     // Tick — предохранитель от выхода за пределы зоны
     // -------------------------------------------------------------------------
+
+    @Override
+    public InteractionResult mobInteract(Player player, InteractionHand hand) {
+        if (hand != InteractionHand.MAIN_HAND) return InteractionResult.PASS;
+
+        // Проверка на палку (админку)
+        if (player.getItemInHand(hand).is(net.minecraft.world.item.Items.STICK)) {
+            return InteractionResult.PASS;
+        }
+
+        if (this.getTradingEnabled()) {
+            if (!this.level().isClientSide) {
+                // 1. Запоминаем игрока
+                this.setTradingPlayer(player);
+
+                // 2. Вызываем тот самый метод, который ты нашёл!
+                // Параметры: игрок, имя NPC, уровень (ставим 1)
+                this.openTradingScreen(player, this.getDisplayName(), 1);
+
+                QuestNPCLogger.debug("Торговля открыта через openTradingScreen для {}", player.getName().getString());
+            }
+            return InteractionResult.sidedSuccess(this.level().isClientSide);
+        }
+
+        return super.mobInteract(player, hand);
+    }
 
     @Override
     public void tick() {
