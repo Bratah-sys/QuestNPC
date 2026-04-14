@@ -4,10 +4,12 @@ import com.questnpc.client.gui.widget.DarkButton;
 import com.questnpc.entity.QuestNPCEntity;
 import com.questnpc.entity.schedule.ScheduleEntry;
 import com.questnpc.network.ModNetwork;
+import com.questnpc.network.RequestPatrolBrushPacket;
 import com.questnpc.network.UpdateSchedulePacket;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.EditBox;
+import net.minecraft.client.gui.screens.ConfirmScreen;
 import net.minecraft.client.gui.screens.Screen;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
@@ -58,7 +60,6 @@ public class ScheduleScreen extends Screen {
     private int selectedSlotIndex = -1;
     private int scrollOffset = 0;
     private boolean suppressResponders = false;
-    private long patrolHintUntil = 0;
 
     private int panelX, panelY;
 
@@ -76,6 +77,7 @@ public class ScheduleScreen extends Screen {
     private EditBox toField;
     private DarkButton movementPointBtn;
     private DarkButton movementPatrolBtn;
+    private DarkButton movementBrushBtn;
     private EditBox posXField;
     private EditBox posYField;
     private EditBox posZField;
@@ -241,12 +243,15 @@ public class ScheduleScreen extends Screen {
                 b -> setMovement(ScheduleEntry.Movement.POINT)
         ));
         movementPatrolBtn = this.addRenderableWidget(new DarkButton(
-                x + 166, moveY, 100, 14,
+                x + 166, moveY, 86, 14,
                 Component.translatable("gui.questnpc.schedule.movement.patrol"),
-                b -> {
-                    setMovement(ScheduleEntry.Movement.PATROL);
-                    patrolHintUntil = System.currentTimeMillis() + 3500;
-                }
+                b -> setMovement(ScheduleEntry.Movement.PATROL)
+        ));
+        // v2.6.0: кнопка кисти для рисования зоны (видна только при movement=PATROL)
+        movementBrushBtn = this.addRenderableWidget(new DarkButton(
+                x + 254, moveY, 14, 14,
+                Component.literal("\u270E"), // pencil glyph ✎
+                b -> openPatrolBrush()
         ));
 
         // Row 4: Position
@@ -364,6 +369,51 @@ public class ScheduleScreen extends Screen {
         updateEditPanelFromSelected();
     }
 
+    /**
+     * v2.6.0: запрос кисти патруля для текущего слота.
+     * Если у слота уже есть зона — показываем ConfirmScreen (Edit / Start new).
+     * Иначе — сразу запрос.
+     *
+     * <p>Важно: Apply должен быть сделан ДО кисти, чтобы слот существовал на сервере.
+     * Мы делаем applySettings() здесь же — синхронизирует текущее состояние и сохраняет сессию.
+     */
+    private void openPatrolBrush() {
+        ScheduleEntry e = currentEntry();
+        if (e == null) return;
+        final int slot = selectedSlotIndex;
+
+        // Сначала применяем текущее состояние расписания, чтобы сервер имел актуальный snapshot
+        List<CompoundTag> payload = new ArrayList<>();
+        for (ScheduleEntry en : entries) payload.add(en.save());
+        ModNetwork.INSTANCE.sendToServer(new UpdateSchedulePacket(npc.getId(), scheduleEnabled, payload));
+        if (parentScreen instanceof NPCMenuScreen parentMenu) {
+            parentMenu.updateScheduleState(scheduleEnabled, payload);
+        }
+
+        if (e.patrolZone.isEmpty()) {
+            sendBrushRequest(slot, true);
+            return;
+        }
+
+        int existingCount = e.patrolZone.size();
+        Minecraft.getInstance().setScreen(new ConfirmScreen(
+                result -> {
+                    // true = Edit existing (startFresh=false); false = Start new (startFresh=true)
+                    sendBrushRequest(slot, !result);
+                },
+                Component.translatable("gui.questnpc.schedule.patrol.prompt.title"),
+                Component.translatable("gui.questnpc.schedule.patrol.prompt.message", existingCount),
+                Component.translatable("gui.questnpc.schedule.patrol.prompt.edit"),
+                Component.translatable("gui.questnpc.schedule.patrol.prompt.new")
+        ));
+    }
+
+    private void sendBrushRequest(int slot, boolean startFresh) {
+        ModNetwork.INSTANCE.sendToServer(new RequestPatrolBrushPacket(npc.getId(), slot, startFresh));
+        // Закрываем все GUI — выходим в мир
+        Minecraft.getInstance().setScreen(null);
+    }
+
     private void updatePosFromFields() {
         if (suppressResponders) return;
         ScheduleEntry e = currentEntry();
@@ -452,6 +502,8 @@ public class ScheduleScreen extends Screen {
         toField.visible = has;
         movementPointBtn.visible = has;
         movementPatrolBtn.visible = has;
+        movementBrushBtn.visible = has && currentEntry() != null
+                && currentEntry().movement == ScheduleEntry.Movement.PATROL;
         posXField.visible = has;
         posYField.visible = has;
         posZField.visible = has;
@@ -630,15 +682,17 @@ public class ScheduleScreen extends Screen {
                     NPCMenuScreen.TEXT_RED & 0x00FFFFFF, false);
         }
 
-        // Patrol WIP hint
-        if (System.currentTimeMillis() < patrolHintUntil) {
-            g.drawCenteredString(this.font,
-                    Component.translatable("gui.questnpc.schedule.movement.patrol_wip"),
-                    panelX + PANEL_WIDTH / 2, panelY + PANEL_HEIGHT - 58,
-                    NPCMenuScreen.TEXT_CYAN & 0x00FFFFFF);
-        }
-
         super.render(g, mouseX, mouseY, partialTick);
+
+        // v2.6.0: tooltip для кнопки кисти (показываем количество блоков)
+        if (movementBrushBtn != null && movementBrushBtn.visible && movementBrushBtn.isHoveredOrFocused()) {
+            ScheduleEntry e = currentEntry();
+            int count = e != null ? e.patrolZone.size() : 0;
+            List<Component> lines = new ArrayList<>();
+            lines.add(Component.translatable("gui.questnpc.schedule.patrol.brush.tooltip"));
+            lines.add(Component.translatable("gui.questnpc.schedule.patrol.blocks_count", count));
+            g.renderComponentTooltip(this.font, lines, mouseX, mouseY);
+        }
 
         // Tooltips for WIP buttons
         if (interactDialogBtn.visible && interactDialogBtn.isHoveredOrFocused()) {

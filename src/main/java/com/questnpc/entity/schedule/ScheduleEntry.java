@@ -4,6 +4,8 @@ import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 
 import javax.annotation.Nullable;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Один слот расписания NPC. Привязан к игровому времени суток (0..24000 тиков).
@@ -15,10 +17,12 @@ import javax.annotation.Nullable;
 public class ScheduleEntry {
 
     public enum Type { ACTIVITY, TRADE, ANIMATION }
-    public enum Movement { POINT, PATROL } // PATROL — заглушка, в рантайме ведёт себя как POINT
+    public enum Movement { POINT, PATROL }
 
     public static final int MAX_NAME_LENGTH = 32;
     public static final int DAY_TICKS = 24000;
+    /** Максимум блоков в одной зоне патруля (защита от переполнения NBT/пакета). */
+    public static final int MAX_PATROL_ZONE_BLOCKS = 256;
 
     public String name = "";
     public Type type = Type.ACTIVITY;
@@ -40,6 +44,13 @@ public class ScheduleEntry {
     public String interactTradeSet = "";
     public boolean interactDialog = false; // WIP
     public boolean interactQuest = false;  // WIP
+
+    /**
+     * Зона патруля — набор позиций ног NPC для {@link Movement#PATROL}.
+     * Если пустая — PATROL ведёт себя как POINT (fallback на {@link #position}).
+     * Редактируется игроком через предмет «Кисть патруля» (v2.6.0).
+     */
+    public final List<BlockPos> patrolZone = new ArrayList<>();
 
     /**
      * Проверяет, попадает ли данный тик времени суток ([0..24000)) в диапазон слота.
@@ -81,6 +92,13 @@ public class ScheduleEntry {
         tag.putString("InteractTradeSet", interactTradeSet != null ? interactTradeSet : "");
         tag.putBoolean("InteractDialog", interactDialog);
         tag.putBoolean("InteractQuest", interactQuest);
+        if (!patrolZone.isEmpty()) {
+            long[] packed = new long[patrolZone.size()];
+            for (int i = 0; i < patrolZone.size(); i++) {
+                packed[i] = patrolZone.get(i).asLong();
+            }
+            tag.putLongArray("PatrolZone", packed);
+        }
         return tag;
     }
 
@@ -110,6 +128,14 @@ public class ScheduleEntry {
         e.interactTradeSet = tag.getString("InteractTradeSet");
         e.interactDialog = tag.getBoolean("InteractDialog");
         e.interactQuest = tag.getBoolean("InteractQuest");
+        e.patrolZone.clear();
+        if (tag.contains("PatrolZone", net.minecraft.nbt.Tag.TAG_LONG_ARRAY)) {
+            long[] packed = tag.getLongArray("PatrolZone");
+            int limit = Math.min(packed.length, MAX_PATROL_ZONE_BLOCKS);
+            for (int i = 0; i < limit; i++) {
+                e.patrolZone.add(BlockPos.of(packed[i]));
+            }
+        }
         return e;
     }
 

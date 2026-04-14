@@ -4,6 +4,7 @@ import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.*;
 import com.questnpc.QuestNPCLogger;
 import com.questnpc.entity.QuestNPCEntity;
+import com.questnpc.entity.schedule.ScheduleEntry;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.renderer.GameRenderer;
 import net.minecraft.core.BlockPos;
@@ -35,6 +36,27 @@ public class NPCDebugRenderer {
     // Кэш визуализации зоны патруля: entityId → данные
     private static final Map<Integer, CachedZone> zoneCache = new HashMap<>();
 
+    /**
+     * v2.6.0: палитра цветов для зон расписания (10 слотов max).
+     * R, G, B floats [0..1].
+     */
+    private static final float[][] SCHED_PALETTE = {
+            {1.0f, 0.3f, 0.3f},  // red
+            {1.0f, 0.6f, 0.1f},  // orange
+            {1.0f, 0.95f, 0.2f}, // yellow
+            {0.3f, 1.0f, 0.3f},  // green
+            {0.2f, 1.0f, 0.9f},  // cyan
+            {0.6f, 0.5f, 1.0f},  // indigo
+            {0.9f, 0.3f, 1.0f},  // magenta
+            {1.0f, 0.5f, 0.85f}, // pink
+            {0.7f, 0.4f, 0.2f},  // brown
+            {0.95f, 0.95f, 0.95f}// white
+    };
+
+    private static float[] colorForSlot(int slotIndex) {
+        return SCHED_PALETTE[Math.floorMod(slotIndex, SCHED_PALETTE.length)];
+    }
+
     @SubscribeEvent
     public void onRenderLevel(RenderLevelStageEvent event) {
         if (event.getStage() != RenderLevelStageEvent.Stage.AFTER_ENTITIES) return;
@@ -65,15 +87,26 @@ public class NPCDebugRenderer {
 
         for (QuestNPCEntity npc : npcs) {
             BlockPos boundPos = npc.getBoundBlockPos();
-            if (boundPos == null) continue;
 
-            CachedZone zone = getOrCreateZone(npc.getId(), boundPos,
-                    QuestNPCEntity.PATROL_RADIUS, mc.level);
+            // Дефолтная зона (flood-fill вокруг boundBlockPos) — только если NPC привязан
+            CachedZone zone = null;
+            if (boundPos != null) {
+                zone = getOrCreateZone(npc.getId(), boundPos,
+                        QuestNPCEntity.PATROL_RADIUS, mc.level);
+            }
+
+            // v2.6.0: определяем активный слот расписания для подсветки
+            int activeIdx = computeActiveScheduleIndex(npc, mc);
 
             // === Непрозрачные элементы (с depth write) ===
 
-            // --- Синий контур проходимой зоны ---
-            renderZoneContour(tesselator, poseStack, zone);
+            if (zone != null) {
+                // --- Синий контур проходимой зоны (дефолт BoundedStroll) ---
+                renderZoneContour(tesselator, poseStack, zone);
+            }
+
+            // --- v2.6.0: контур каждой зоны расписания ---
+            renderScheduleContours(tesselator, poseStack, npc, activeIdx);
 
             // --- Жёлтая ломаная линия через все узлы навигационного пути ---
             renderPath(tesselator, poseStack, npc);
@@ -81,11 +114,18 @@ public class NPCDebugRenderer {
             // === Полупрозрачные элементы (без depth write) ===
             RenderSystem.depthMask(false);
 
-            // --- Красный полупрозрачный оверлей на farmnpc_block ---
-            renderBlockOverlay(tesselator, poseStack, boundPos);
+            if (boundPos != null) {
+                // --- Красный полупрозрачный оверлей на farmnpc_block ---
+                renderBlockOverlay(tesselator, poseStack, boundPos);
+            }
 
-            // --- Синяя заливка проходимой зоны ---
-            renderZoneFill(tesselator, poseStack, zone);
+            if (zone != null) {
+                // --- Синяя заливка проходимой зоны ---
+                renderZoneFill(tesselator, poseStack, zone);
+            }
+
+            // --- v2.6.0: заливка каждой зоны расписания ---
+            renderScheduleFills(tesselator, poseStack, npc, activeIdx);
 
             RenderSystem.depthMask(true);
         }
@@ -237,6 +277,15 @@ public class NPCDebugRenderer {
     }
 
     /**
+     * v2.6.0: заглушка для будущего кэша зон расписания. Сейчас зоны читаются напрямую
+     * из {@link QuestNPCEntity#getClientSchedule()} каждый кадр — инвалидация не требуется,
+     * но метод оставлен как hook для {@link com.questnpc.network.ScheduleSyncPacket#handle}.
+     */
+    public static void invalidateScheduleZones(int entityId) {
+        // No-op: зоны рисуются from-source каждый кадр (см. renderScheduleFills/Contours)
+    }
+
+    /**
      * Очищает весь кэш (при смене мира).
      */
     public static void clearCache() {
@@ -302,5 +351,106 @@ public class NPCDebugRenderer {
         }
 
         tesselator.end();
+    }
+
+    // =========================================================================
+    // v2.6.0: рендер зон расписания (palette + активная зона ярче)
+    // =========================================================================
+
+    /**
+     * Определяет индекс активного сейчас слота расписания. Возвращает -1 если не активен.
+     */
+    private int computeActiveScheduleIndex(QuestNPCEntity npc, Minecraft mc) {
+        if (!npc.isClientScheduleEnabled()) return -1;
+        List<ScheduleEntry> sched = npc.getClientSchedule();
+        if (sched.isEmpty() || mc.level == null) return -1;
+        int timeOfDay = (int) (mc.level.getDayTime() % 24000L);
+        if (timeOfDay < 0) timeOfDay += 24000;
+        for (int i = 0; i < sched.size(); i++) {
+            if (sched.get(i).containsTime(timeOfDay)) return i;
+        }
+        return -1;
+    }
+
+    private void renderScheduleFills(Tesselator tess, PoseStack poseStack,
+                                     QuestNPCEntity npc, int activeIdx) {
+        List<ScheduleEntry> sched = npc.getClientSchedule();
+        if (sched.isEmpty()) return;
+
+        Matrix4f m = poseStack.last().pose();
+        RenderSystem.disableCull();
+        BufferBuilder buf = tess.getBuilder();
+        buf.begin(VertexFormat.Mode.QUADS, DefaultVertexFormat.POSITION_COLOR);
+        float yOff = 0.012f;
+
+        for (int i = 0; i < sched.size(); i++) {
+            ScheduleEntry e = sched.get(i);
+            if (e.movement != ScheduleEntry.Movement.PATROL) continue;
+            if (e.patrolZone.isEmpty()) continue;
+
+            float[] c = colorForSlot(i);
+            boolean active = (i == activeIdx);
+            float a = active ? 0.20f : 0.08f;
+
+            for (BlockPos p : e.patrolZone) {
+                float x0 = p.getX();
+                float y = p.getY() + yOff;
+                float z0 = p.getZ();
+                buf.vertex(m, x0,      y, z0     ).color(c[0], c[1], c[2], a).endVertex();
+                buf.vertex(m, x0,      y, z0 + 1 ).color(c[0], c[1], c[2], a).endVertex();
+                buf.vertex(m, x0 + 1,  y, z0 + 1 ).color(c[0], c[1], c[2], a).endVertex();
+                buf.vertex(m, x0 + 1,  y, z0     ).color(c[0], c[1], c[2], a).endVertex();
+            }
+        }
+        tess.end();
+        RenderSystem.enableCull();
+    }
+
+    /**
+     * v2.6.2: контур зоны расписания — ребро рисуется только если соседа в той же зоне нет,
+     * что даёт объединённый контур вокруг связных групп (как у BoundedStroll ZoneData).
+     */
+    private void renderScheduleContours(Tesselator tess, PoseStack poseStack,
+                                        QuestNPCEntity npc, int activeIdx) {
+        List<ScheduleEntry> sched = npc.getClientSchedule();
+        if (sched.isEmpty()) return;
+
+        Matrix4f m = poseStack.last().pose();
+        BufferBuilder buf = tess.getBuilder();
+        buf.begin(VertexFormat.Mode.DEBUG_LINES, DefaultVertexFormat.POSITION_COLOR);
+        float yOff = 0.025f;
+
+        for (int i = 0; i < sched.size(); i++) {
+            ScheduleEntry e = sched.get(i);
+            if (e.movement != ScheduleEntry.Movement.PATROL) continue;
+            if (e.patrolZone.isEmpty()) continue;
+
+            float[] c = colorForSlot(i);
+            boolean active = (i == activeIdx);
+            float a = active ? 1.0f : 0.6f;
+
+            // Set для быстрой проверки соседей
+            Set<Long> set = new HashSet<>(e.patrolZone.size() * 2);
+            for (BlockPos p : e.patrolZone) set.add(p.asLong());
+
+            for (BlockPos p : e.patrolZone) {
+                float x0 = p.getX();
+                float y = p.getY() + yOff;
+                float z0 = p.getZ();
+                if (!set.contains(p.north().asLong())) addEdge(buf, m, x0,     y, z0,     x0 + 1, y, z0,     c, a);
+                if (!set.contains(p.south().asLong())) addEdge(buf, m, x0,     y, z0 + 1, x0 + 1, y, z0 + 1, c, a);
+                if (!set.contains(p.west().asLong()))  addEdge(buf, m, x0,     y, z0,     x0,     y, z0 + 1, c, a);
+                if (!set.contains(p.east().asLong()))  addEdge(buf, m, x0 + 1, y, z0,     x0 + 1, y, z0 + 1, c, a);
+            }
+        }
+        tess.end();
+    }
+
+    private void addEdge(BufferBuilder buf, Matrix4f m,
+                         float x1, float y1, float z1,
+                         float x2, float y2, float z2,
+                         float[] c, float a) {
+        buf.vertex(m, x1, y1, z1).color(c[0], c[1], c[2], a).endVertex();
+        buf.vertex(m, x2, y2, z2).color(c[0], c[1], c[2], a).endVertex();
     }
 }

@@ -3,6 +3,7 @@ package com.questnpc;
 import com.questnpc.block.ModBlocks;
 import com.questnpc.client.ModKeyBindings;
 import com.questnpc.client.debug.NPCDebugRenderer;
+import com.questnpc.client.debug.PatrolBrushRenderer;
 import com.questnpc.client.gui.ItemCatalogScreen;
 import com.questnpc.client.model.CustomModelManager;
 import com.questnpc.client.model.CustomModelPackResources;
@@ -14,6 +15,7 @@ import com.questnpc.item.ModItems;
 import com.questnpc.events.NPCInteractionHandler;
 import com.questnpc.network.ModNetwork;
 import com.questnpc.network.NPCMenuSessionManager;
+import com.questnpc.network.PatrolPaintSessionManager;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.RegisterCommandsEvent;
 import net.minecraftforge.event.TickEvent;
@@ -41,7 +43,7 @@ import net.minecraft.network.chat.Component;
 public class QuestNPC {
 
     public static final String MOD_ID = "questnpc";
-    public static final String MOD_VERSION = "0.3.1-alpha-menurefactor-v2.5.5";
+    public static final String MOD_VERSION = "0.3.1-alpha-menurefactor-v2.6.3";
 
     public QuestNPC() {
         QuestNPCLogger.info("Инициализация мода QuestNPC v{}", MOD_VERSION);
@@ -136,8 +138,9 @@ public class QuestNPC {
 
         // Регистрация дебаг-рендерера на Forge EVENT_BUS (не на mod bus)
         MinecraftForge.EVENT_BUS.register(new NPCDebugRenderer());
+        MinecraftForge.EVENT_BUS.register(new PatrolBrushRenderer());
         MinecraftForge.EVENT_BUS.register(new ModKeyBindings());
-        QuestNPCLogger.info("NPCDebugRenderer и кейбинды зарегистрированы");
+        QuestNPCLogger.info("NPCDebugRenderer, PatrolBrushRenderer и кейбинды зарегистрированы");
 
         QuestNPCLogger.info("FMLClientSetupEvent: клиентская инициализация завершена");
     }
@@ -169,13 +172,14 @@ public class QuestNPC {
     private int sessionCleanupCounter = 0;
 
     /**
-     * Закрывает сессию NPC-меню при выходе игрока с сервера.
+     * Закрывает сессию NPC-меню и paint-сессию при выходе игрока с сервера.
      */
     @SubscribeEvent
     public void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
         NPCMenuSessionManager.getInstance().closeSession(
                 event.getEntity().getUUID(),
                 event.getEntity().getName().getString());
+        PatrolPaintSessionManager.getInstance().closeSession(event.getEntity().getUUID());
     }
 
     /**
@@ -188,6 +192,7 @@ public class QuestNPC {
         if (sessionCleanupCounter >= NPCMenuSessionManager.CLEANUP_INTERVAL_TICKS) {
             sessionCleanupCounter = 0;
             NPCMenuSessionManager.getInstance().cleanupExpiredSessions();
+            PatrolPaintSessionManager.getInstance().cleanupExpiredSessions();
         }
     }
 }

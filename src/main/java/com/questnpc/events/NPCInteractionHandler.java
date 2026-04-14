@@ -3,9 +3,12 @@ package com.questnpc.events;
 import com.questnpc.QuestNPCLogger;
 import com.questnpc.entity.QuestNPCEntity;
 import com.questnpc.entity.schedule.ScheduleEntry;
+import com.questnpc.item.PatrolBrushItem;
+import com.questnpc.network.FinishPatrolPaintPacket;
 import com.questnpc.network.ModNetwork;
 import com.questnpc.network.NPCMenuSessionManager;
 import com.questnpc.network.OpenNPCMenuPacket;
+import com.questnpc.network.ScheduleSyncPacket;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
@@ -20,7 +23,9 @@ import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.event.entity.player.PlayerInteractEvent;
+import net.minecraftforge.event.level.BlockEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.network.PacketDistributor;
 
@@ -130,5 +135,58 @@ public class NPCInteractionHandler {
 
         event.setCanceled(true);
         event.setCancellationResult(InteractionResult.SUCCESS);
+    }
+
+    // -------------------------------------------------------------------------
+    // v2.6.0: ЛКМ по блоку с кистью в руках → завершение рисования зоны патруля
+    // -------------------------------------------------------------------------
+
+    @SubscribeEvent
+    public void onLeftClickBlock(PlayerInteractEvent.LeftClickBlock event) {
+        if (event.getHand() != InteractionHand.MAIN_HAND) return;
+        ItemStack held = event.getEntity().getMainHandItem();
+        if (!(held.getItem() instanceof PatrolBrushItem)) return;
+
+        // Не ломать блок — только финализация
+        event.setCanceled(true);
+        event.setCancellationResult(InteractionResult.SUCCESS);
+        event.setUseBlock(net.minecraftforge.eventbus.api.Event.Result.DENY);
+
+        // Пакет отправляет только клиент — на сервере Forge эмитит этот event дважды иначе
+        if (event.getLevel().isClientSide()) {
+            ModNetwork.INSTANCE.sendToServer(new FinishPatrolPaintPacket());
+        }
+    }
+
+    /**
+     * v2.6.2: защита от creative instant-break. В Creative mode ЛКМ ломает блок мгновенно
+     * через {@link net.minecraft.network.protocol.game.ServerboundPlayerActionPacket} на сервере,
+     * минуя обычный MINING-цикл. {@link PlayerInteractEvent.LeftClickBlock#setCanceled} не всегда
+     * успевает — поэтому дополнительно отменяем сам {@link BlockEvent.BreakEvent}.
+     */
+    @SubscribeEvent
+    public void onBlockBreak(BlockEvent.BreakEvent event) {
+        if (event.getPlayer() == null) return;
+        ItemStack held = event.getPlayer().getMainHandItem();
+        if (held.getItem() instanceof PatrolBrushItem) {
+            event.setCanceled(true);
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // v2.6.0: при начале трекинга NPC — шлём клиенту snapshot расписания для /npc_vis
+    // -------------------------------------------------------------------------
+
+    @SubscribeEvent
+    public void onStartTracking(PlayerEvent.StartTracking event) {
+        if (!(event.getTarget() instanceof QuestNPCEntity npc)) return;
+        if (!(event.getEntity() instanceof ServerPlayer player)) return;
+
+        List<CompoundTag> serialized = new ArrayList<>();
+        for (ScheduleEntry e : npc.getSchedule()) serialized.add(e.save());
+        ModNetwork.INSTANCE.send(
+                PacketDistributor.PLAYER.with(() -> player),
+                new ScheduleSyncPacket(npc.getId(), npc.isScheduleEnabled(), serialized)
+        );
     }
 }

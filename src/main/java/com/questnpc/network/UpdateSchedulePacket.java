@@ -8,6 +8,7 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
 import net.minecraftforge.network.NetworkEvent;
+import net.minecraftforge.network.PacketDistributor;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -74,6 +75,14 @@ public class UpdateSchedulePacket {
             }
             npc.setScheduleEnabled(packet.enabled);
             npc.setSchedule(parsed);
+
+            // v2.6.0: рассылаем ScheduleSyncPacket трекинг-игрокам для debug-рендера
+            List<CompoundTag> serialized = new ArrayList<>();
+            for (ScheduleEntry e : npc.getSchedule()) serialized.add(e.save());
+            ModNetwork.INSTANCE.send(
+                    PacketDistributor.TRACKING_ENTITY.with(() -> npc),
+                    new ScheduleSyncPacket(npc.getId(), npc.isScheduleEnabled(), serialized)
+            );
 
             QuestNPCLogger.info("Игрок {} обновил расписание NPC {}: enabled={}, slots={}",
                     player.getName().getString(), packet.entityId, packet.enabled, parsed.size());

@@ -10,7 +10,7 @@ import net.minecraftforge.network.simple.SimpleChannel;
  */
 public final class ModNetwork {
 
-    private static final String PROTOCOL_VERSION = "5";
+    private static final String PROTOCOL_VERSION = "6";
 
     public static final SimpleChannel INSTANCE = NetworkRegistry.newSimpleChannel(
             new ResourceLocation(QuestNPC.MOD_ID, "main"),
@@ -114,6 +114,27 @@ public final class ModNetwork {
                 UpdateSchedulePacket::encode,
                 UpdateSchedulePacket::decode,
                 UpdateSchedulePacket::handle
+        );
+        INSTANCE.registerMessage(
+                13,
+                ScheduleSyncPacket.class,
+                ScheduleSyncPacket::encode,
+                ScheduleSyncPacket::decode,
+                ScheduleSyncPacket::handle
+        );
+        INSTANCE.registerMessage(
+                14,
+                RequestPatrolBrushPacket.class,
+                RequestPatrolBrushPacket::encode,
+                RequestPatrolBrushPacket::decode,
+                RequestPatrolBrushPacket::handle
+        );
+        INSTANCE.registerMessage(
+                15,
+                FinishPatrolPaintPacket.class,
+                FinishPatrolPaintPacket::encode,
+                FinishPatrolPaintPacket::decode,
+                FinishPatrolPaintPacket::handle
         );
     }
 

@@ -94,6 +94,10 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity {
     private final List<ScheduleEntry> schedule = new ArrayList<>();
     private boolean scheduleEnabled = false;
 
+    // --- Клиентская копия расписания (для рендера /npc_vis), синкается через ScheduleSyncPacket ---
+    private List<ScheduleEntry> clientSchedule = new ArrayList<>();
+    private boolean clientScheduleEnabled = false;
+
     /**
      * Именованный набор сделок. У одного NPC может быть до {@link #MAX_TRADE_SETS} наборов.
      * Формат содержимого {@code offers} совпадает с legacy {@code TradeOffers}:
@@ -317,6 +321,24 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity {
 
     public boolean isScheduleEnabled() {
         return scheduleEnabled;
+    }
+
+    // --- Клиентская копия (только для debug-рендера) ---
+
+    public List<ScheduleEntry> getClientSchedule() {
+        return clientSchedule;
+    }
+
+    public void setClientSchedule(List<ScheduleEntry> entries) {
+        this.clientSchedule = entries != null ? entries : new ArrayList<>();
+    }
+
+    public boolean isClientScheduleEnabled() {
+        return clientScheduleEnabled;
+    }
+
+    public void setClientScheduleEnabled(boolean enabled) {
+        this.clientScheduleEnabled = enabled;
     }
 
     public void setScheduleEnabled(boolean enabled) {
