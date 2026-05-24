@@ -69,6 +69,7 @@ public class NPCMenuScreen extends Screen {
     private List<QuestNPCEntity.TradeSet> currentTradeSets;
     private boolean currentScheduleEnabled;
     private List<CompoundTag> currentSchedule;
+    private net.minecraft.world.item.ItemStack[] currentEquipment; // v2.8.0 снимок брони с сервера
 
     // ═══ Виджеты ═══
     private EditBox nameField;
@@ -89,7 +90,8 @@ public class NPCMenuScreen extends Screen {
 
     public NPCMenuScreen(QuestNPCEntity npc, double speed, int delayMin, int delayMax, String modelType,
                          boolean tradingEnabled, List<QuestNPCEntity.TradeSet> tradeSets,
-                         boolean scheduleEnabled, List<CompoundTag> schedule) {
+                         boolean scheduleEnabled, List<CompoundTag> schedule,
+                         net.minecraft.world.item.ItemStack[] equipment) {
         super(Component.translatable("gui.questnpc.menu.title"));
         this.npc = npc;
         this.currentSpeed = speed;
@@ -100,6 +102,16 @@ public class NPCMenuScreen extends Screen {
         this.currentTradeSets = tradeSets != null ? tradeSets : new ArrayList<>();
         this.currentScheduleEnabled = scheduleEnabled;
         this.currentSchedule = schedule != null ? schedule : new ArrayList<>();
+        if (equipment != null && equipment.length == QuestNPCEntity.EQUIPMENT_SLOTS) {
+            this.currentEquipment = equipment;
+        } else {
+            this.currentEquipment = new net.minecraft.world.item.ItemStack[]{
+                    net.minecraft.world.item.ItemStack.EMPTY,
+                    net.minecraft.world.item.ItemStack.EMPTY,
+                    net.minecraft.world.item.ItemStack.EMPTY,
+                    net.minecraft.world.item.ItemStack.EMPTY
+            };
+        }
     }
 
     // ═══ Выбор кастомной модели (custom:...) ═══
@@ -204,6 +216,12 @@ public class NPCMenuScreen extends Screen {
                         navigatingToSubScreen = true;
                         Minecraft.getInstance().setScreen(new ScheduleScreen(
                                 npc, currentTradeSets, currentScheduleEnabled, currentSchedule, this));
+                    };
+                } else if (key.equals("gui.questnpc.menu.btn.equipment")) {
+                    action = button -> {
+                        navigatingToSubScreen = true;
+                        Minecraft.getInstance().setScreen(
+                                new EquipmentScreen(npc, currentEquipment, this));
                     };
                 } else {
                     action = button -> {}; // заглушка

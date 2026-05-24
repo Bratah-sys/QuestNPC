@@ -63,10 +63,13 @@ public class ItemCatalogScreen extends Screen {
     private static final int SEARCH_WIDTH  = 120;
 
     // ═══ Данные ═══
-    private final NPCTradingScreen parent;
+    private final net.minecraft.client.gui.screens.Screen parent;
+    @Nullable private final NPCTradingScreen tradeParent; // legacy путь: setPendingItemSelection
     private final int globalSlotId;
     @Nullable
     private final Item initialSelection;
+    @Nullable private final java.util.function.Predicate<Item> itemFilter;     // v2.8.0
+    @Nullable private final java.util.function.Consumer<Item> onConfirm;       // v2.8.0
 
     // Вкладки модов: namespace → display name
     private final List<String> modNamespaces = new ArrayList<>();
@@ -109,9 +112,33 @@ public class ItemCatalogScreen extends Screen {
     public ItemCatalogScreen(NPCTradingScreen parent, int globalSlotId, @Nullable Item currentItem) {
         super(Component.translatable("gui.questnpc.item_catalog.title"));
         this.parent = parent;
+        this.tradeParent = parent;
         this.globalSlotId = globalSlotId;
         this.initialSelection = currentItem;
         this.selectedItem = currentItem;
+        this.itemFilter = null;
+        this.onConfirm = null;
+    }
+
+    /**
+     * v2.8.0: универсальный конструктор для не-trading-вызовов (например, Экипировка).
+     * @param parent     любой Screen, на который вернуть управление при Back/Esc.
+     * @param current    текущий выбранный Item (null = пустой слот).
+     * @param filter     фильтр предметов (null = показывать все). Применяется в дополнение к поиску.
+     * @param onConfirm  колбэк выбора. Получает null если очищено.
+     */
+    public ItemCatalogScreen(net.minecraft.client.gui.screens.Screen parent,
+                             @Nullable Item current,
+                             @Nullable java.util.function.Predicate<Item> filter,
+                             java.util.function.Consumer<Item> onConfirm) {
+        super(Component.translatable("gui.questnpc.item_catalog.title"));
+        this.parent = parent;
+        this.tradeParent = null;
+        this.globalSlotId = -1;
+        this.initialSelection = current;
+        this.selectedItem = current;
+        this.itemFilter = filter;
+        this.onConfirm = onConfirm;
     }
 
     // ═══════════════════════════════════════════════
@@ -268,14 +295,15 @@ public class ItemCatalogScreen extends Screen {
         List<ItemEntry> all = CACHED_ENTRIES.getOrDefault(namespace, Collections.emptyList());
 
         String query = searchBox != null ? searchBox.getValue().trim().toLowerCase() : "";
-        if (query.isEmpty()) {
-            filteredEntries = new ArrayList<>(all);
-        } else {
-            filteredEntries = all.stream()
-                    .filter(e -> e.displayName.toLowerCase().contains(query)
-                            || e.id.getPath().contains(query))
-                    .collect(Collectors.toList());
+        java.util.stream.Stream<ItemEntry> stream = all.stream();
+        if (itemFilter != null) {
+            stream = stream.filter(e -> itemFilter.test(e.item));
         }
+        if (!query.isEmpty()) {
+            stream = stream.filter(e -> e.displayName.toLowerCase().contains(query)
+                    || e.id.getPath().contains(query));
+        }
+        filteredEntries = stream.collect(Collectors.toList());
     }
 
     // ═══════════════════════════════════════════════
@@ -617,7 +645,13 @@ public class ItemCatalogScreen extends Screen {
     // ═══════════════════════════════════════════════
 
     private void confirmSelection() {
-        parent.setPendingItemSelection(globalSlotId, selectedItem);
+        if (onConfirm != null) {
+            // v2.8.0: новый путь (Экипировка и др.) — отдаём выбор через callback.
+            onConfirm.accept(selectedItem);
+        } else if (tradeParent != null) {
+            // Legacy путь — NPCTradingScreen.
+            tradeParent.setPendingItemSelection(globalSlotId, selectedItem);
+        }
         Minecraft.getInstance().setScreen(parent);
     }
 

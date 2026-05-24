@@ -6,6 +6,7 @@ import net.minecraft.client.Minecraft;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.network.NetworkEvent;
 
 import java.util.ArrayList;
@@ -27,10 +28,12 @@ public class OpenNPCMenuPacket {
     private final List<QuestNPCEntity.TradeSet> tradeSets;
     private final boolean scheduleEnabled;
     private final List<CompoundTag> schedule;
+    private final ItemStack[] equipment; // v2.8.0: снимок экипировки длиной EQUIPMENT_SLOTS
 
     public OpenNPCMenuPacket(int entityId, double speed, int delayMin, int delayMax, String modelType,
                              boolean tradingEnabled, List<QuestNPCEntity.TradeSet> tradeSets,
-                             boolean scheduleEnabled, List<CompoundTag> schedule) {
+                             boolean scheduleEnabled, List<CompoundTag> schedule,
+                             ItemStack[] equipment) {
         this.entityId = entityId;
         this.speed = speed;
         this.delayMin = delayMin;
@@ -40,6 +43,9 @@ public class OpenNPCMenuPacket {
         this.tradeSets = tradeSets != null ? tradeSets : new ArrayList<>();
         this.scheduleEnabled = scheduleEnabled;
         this.schedule = schedule != null ? schedule : new ArrayList<>();
+        this.equipment = (equipment != null && equipment.length == QuestNPCEntity.EQUIPMENT_SLOTS)
+                ? equipment
+                : new ItemStack[]{ ItemStack.EMPTY, ItemStack.EMPTY, ItemStack.EMPTY, ItemStack.EMPTY };
     }
 
     public static void encode(OpenNPCMenuPacket packet, FriendlyByteBuf buf) {
@@ -55,6 +61,10 @@ public class OpenNPCMenuPacket {
         buf.writeVarInt(scheduleSize);
         for (int i = 0; i < scheduleSize; i++) {
             buf.writeNbt(packet.schedule.get(i));
+        }
+        // v2.8.0: экипировка (4 ItemStack)
+        for (int i = 0; i < QuestNPCEntity.EQUIPMENT_SLOTS; i++) {
+            buf.writeItem(packet.equipment[i]);
         }
     }
 
@@ -73,8 +83,12 @@ public class OpenNPCMenuPacket {
             CompoundTag tag = buf.readNbt();
             if (tag != null) schedule.add(tag);
         }
+        ItemStack[] equipment = new ItemStack[QuestNPCEntity.EQUIPMENT_SLOTS];
+        for (int i = 0; i < QuestNPCEntity.EQUIPMENT_SLOTS; i++) {
+            equipment[i] = buf.readItem();
+        }
         return new OpenNPCMenuPacket(entityId, speed, delayMin, delayMax, model, trading, sets,
-                scheduleEnabled, schedule);
+                scheduleEnabled, schedule, equipment);
     }
 
     public static void handle(OpenNPCMenuPacket packet, Supplier<NetworkEvent.Context> ctx) {
@@ -85,7 +99,7 @@ public class OpenNPCMenuPacket {
             if (entity instanceof QuestNPCEntity npc) {
                 mc.setScreen(new NPCMenuScreen(npc, packet.speed, packet.delayMin, packet.delayMax,
                         packet.modelType, packet.tradingEnabled, packet.tradeSets,
-                        packet.scheduleEnabled, packet.schedule));
+                        packet.scheduleEnabled, packet.schedule, packet.equipment));
             }
         });
         ctx.get().setPacketHandled(true);

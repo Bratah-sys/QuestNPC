@@ -24,8 +24,11 @@ import net.minecraft.world.entity.EntityDimensions;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.PathfinderMob;
 import net.minecraft.world.entity.Pose;
+import net.minecraft.world.entity.ai.attributes.AttributeInstance;
+import net.minecraft.world.entity.ai.attributes.AttributeModifier;
 import net.minecraft.world.entity.ai.attributes.AttributeSupplier;
 import net.minecraft.world.entity.ai.attributes.Attributes;
+import net.minecraft.world.item.ArmorItem;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.trading.Merchant;
 import net.minecraft.world.item.trading.MerchantOffer;
@@ -53,6 +56,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * Квестовый NPC — PathfinderMob с ручной привязкой к точке патруля.
@@ -109,6 +113,54 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity, Merchant
     // --- Клиентская копия расписания (для рендера /npc_vis), синкается через ScheduleSyncPacket ---
     private List<ScheduleEntry> clientSchedule = new ArrayList<>();
     private boolean clientScheduleEnabled = false;
+
+    // --- Экипировка (v2.8.0): кастомное хранилище, НЕ vanilla armorItems ---
+    // Сделано отдельно от LivingEntity.armorItems специально, чтобы броня НЕ отрендерилась
+    // на NPC (vanilla armor layer читает getItemBySlot(), который мы не переопределяем).
+    public static final int EQUIPMENT_SLOTS = 4; // 0=HEAD, 1=CHEST, 2=LEGS, 3=FEET
+    // Фиксированный UUID для AttributeModifier — НЕ менять, иначе старая броня не удалится из ARMOR.
+    private static final UUID EQUIPMENT_ARMOR_MODIFIER_UUID =
+            UUID.fromString("b1a2c3d4-e5f6-7890-abcd-ef0123456789");
+    private final ItemStack[] equipment = {
+            ItemStack.EMPTY, ItemStack.EMPTY, ItemStack.EMPTY, ItemStack.EMPTY
+    };
+
+    public ItemStack getQuestNPCEquipment(int slot) {
+        return (slot >= 0 && slot < EQUIPMENT_SLOTS) ? equipment[slot] : ItemStack.EMPTY;
+    }
+
+    public void setQuestNPCEquipment(int slot, ItemStack stack) {
+        if (slot < 0 || slot >= EQUIPMENT_SLOTS) return;
+        equipment[slot] = (stack != null) ? stack : ItemStack.EMPTY;
+        applyEquipmentArmor();
+    }
+
+    /** Снимок экипировки для передачи на клиент через OpenNPCMenuPacket. */
+    public ItemStack[] copyEquipmentSnapshot() {
+        ItemStack[] out = new ItemStack[EQUIPMENT_SLOTS];
+        for (int i = 0; i < EQUIPMENT_SLOTS; i++) out[i] = equipment[i].copy();
+        return out;
+    }
+
+    /** Пересчитывает суммарный armor бонус и обновляет AttributeModifier на Attributes.ARMOR. */
+    private void applyEquipmentArmor() {
+        AttributeInstance attr = this.getAttribute(Attributes.ARMOR);
+        if (attr == null) return;
+        attr.removeModifier(EQUIPMENT_ARMOR_MODIFIER_UUID);
+        int total = 0;
+        for (ItemStack s : equipment) {
+            if (!s.isEmpty() && s.getItem() instanceof ArmorItem a) {
+                total += a.getDefense();
+            }
+        }
+        if (total > 0) {
+            attr.addPermanentModifier(new AttributeModifier(
+                    EQUIPMENT_ARMOR_MODIFIER_UUID,
+                    "QuestNPC Equipment",
+                    total,
+                    AttributeModifier.Operation.ADDITION));
+        }
+    }
 
     @Override
     public void setTradingPlayer(@org.jetbrains.annotations.Nullable Player player) {
@@ -910,6 +962,20 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity, Merchant
             }
             tag.put("Schedule", scheduleTag);
         }
+
+        // Экипировка (v2.8.0): кастомный CompoundTag, НЕ vanilla armorItems.
+        boolean anyEquipped = false;
+        for (ItemStack s : equipment) if (!s.isEmpty()) { anyEquipped = true; break; }
+        if (anyEquipped) {
+            CompoundTag eq = new CompoundTag();
+            String[] keys = {"Head", "Chest", "Legs", "Feet"};
+            for (int i = 0; i < EQUIPMENT_SLOTS; i++) {
+                if (!equipment[i].isEmpty()) {
+                    eq.put(keys[i], equipment[i].save(new CompoundTag()));
+                }
+            }
+            tag.put("Equipment", eq);
+        }
     }
 
     @Override
@@ -999,5 +1065,18 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity, Merchant
             // Восстановление патруля после загрузки мира
             activatePatrol();
         }
+
+        // Экипировка (v2.8.0): читаем из кастомного CompoundTag.
+        for (int i = 0; i < EQUIPMENT_SLOTS; i++) equipment[i] = ItemStack.EMPTY;
+        if (tag.contains("Equipment", Tag.TAG_COMPOUND)) {
+            CompoundTag eq = tag.getCompound("Equipment");
+            String[] keys = {"Head", "Chest", "Legs", "Feet"};
+            for (int i = 0; i < EQUIPMENT_SLOTS; i++) {
+                if (eq.contains(keys[i], Tag.TAG_COMPOUND)) {
+                    equipment[i] = ItemStack.of(eq.getCompound(keys[i]));
+                }
+            }
+        }
+        applyEquipmentArmor();
     }
 }

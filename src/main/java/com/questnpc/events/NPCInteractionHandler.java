@@ -69,7 +69,8 @@ public class NPCInteractionHandler {
                         npc.getPatrolDelayMin(), npc.getPatrolDelayMax(),
                         npc.getModelEntityType(),
                         npc.getTradingEnabled(), npc.getTradeSets(),
-                        npc.isScheduleEnabled(), scheduleTags)
+                        npc.isScheduleEnabled(), scheduleTags,
+                        npc.copyEquipmentSnapshot())
         );
         event.setCanceled(true);
         event.setCancellationResult(InteractionResult.SUCCESS);
