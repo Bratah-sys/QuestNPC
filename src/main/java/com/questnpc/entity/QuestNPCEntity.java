@@ -15,6 +15,7 @@ import net.minecraft.network.syncher.EntityDataSerializers;
 import net.minecraft.network.syncher.SynchedEntityData;
 import net.minecraft.server.level.ServerLevel;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvent;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
@@ -97,7 +98,8 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity, Merchant
 
     private Player tradingPlayer;
     private MerchantOffers tradeOffers;
-
+    protected net.minecraft.world.item.trading.MerchantOffers offers; // [3, 4]
+    private long lastTick = -1; // Теперь мы храним не день, а последний зафиксированный тик
     // --- Расписание ---
     public static final int MAX_SCHEDULE_ENTRIES = 10;
 
@@ -115,32 +117,28 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity, Merchant
     }
 
     @Override
-    public MerchantOffers getOffers() {
-        if (!this.level().isClientSide && this.tradingPlayer instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
+    public net.minecraft.world.item.trading.MerchantOffers getOffers() {
+        // Реализация CRIT-002: Загружаем список сделок только один раз [5, 6]
+        if (this.tradeOffers == null &&!this.level().isClientSide && this.tradingPlayer instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
 
             net.minecraft.nbt.ListTag nbtOffers = this.getActiveTradeOffers(serverPlayer);
-
             net.minecraft.world.item.trading.MerchantOffers newOffers = new net.minecraft.world.item.trading.MerchantOffers();
 
             for (int i = 0; i < nbtOffers.size(); i++) {
                 net.minecraft.nbt.CompoundTag tag = nbtOffers.getCompound(i);
-
-                // Создаем копию, чтобы не испортить исходные данные, и переименовываем ключи
                 net.minecraft.nbt.CompoundTag vanillaTag = tag.copy();
 
+                // Твоя логика маппинга ключей [3]
                 if (tag.contains("input1")) vanillaTag.put("buy", tag.get("input1"));
                 if (tag.contains("input2")) vanillaTag.put("buyB", tag.get("input2"));
                 if (tag.contains("output")) vanillaTag.put("sell", tag.get("output"));
-
-                // но убедимся, что лимиты на месте
                 if (!tag.contains("maxUses")) vanillaTag.putInt("maxUses", 999);
 
                 newOffers.add(new net.minecraft.world.item.trading.MerchantOffer(vanillaTag));
             }
-
             this.tradeOffers = newOffers;
         }
-        return this.tradeOffers != null ? this.tradeOffers : new net.minecraft.world.item.trading.MerchantOffers();
+        return this.tradeOffers!= null? this.tradeOffers : new net.minecraft.world.item.trading.MerchantOffers();
     }
 
     @Override
@@ -150,10 +148,72 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity, Merchant
 
     @Override
     public void notifyTrade(net.minecraft.world.item.trading.MerchantOffer offer) {
-        offer.assemble(); // Чтобы сделка засчитывалась
+        // Шаг 1: Инкремент в "живом" объекте (чтобы визуально блокировалось в текущем открытом интерфейсе)
+        offer.increaseUses();
+
         if (!this.level().isClientSide) {
-            QuestNPCLogger.debug("Сделка совершена!");
+            QuestNPCLogger.debug("Сделка совершена! Текущее использование: " + offer.getUses());
+
+            // Шаг 2: Проверяем, что у нас есть кэш сделок
+            if (this.tradeOffers != null) {
+                // Находим точный порядковый номер текущей сделки в нашем списке
+                int index = this.tradeOffers.indexOf(offer);
+
+                // Шаг 3: Если индекс найден, точечно обновляем первоисточник в NBT
+                if (index != -1) {
+                    if (this.tradingPlayer instanceof net.minecraft.server.level.ServerPlayer sp) {
+                        net.minecraft.nbt.ListTag nbtOffers = this.getActiveTradeOffers(sp);
+
+                        // Защита: проверяем, что индекс не выходит за границы списка NBT
+                        if (nbtOffers != null && index < nbtOffers.size()) {
+                            net.minecraft.nbt.CompoundTag tag = nbtOffers.getCompound(index);
+
+                            // Записываем обновленный uses прямо в NBT-структуру сущности
+                            tag.putInt("uses", offer.getUses());
+                            QuestNPCLogger.debug("Успешно сохранено в NBT по индексу " + index + ": uses = " + offer.getUses());
+                        }
+                    }
+                } else {
+                    QuestNPCLogger.warn("Сделка не найдена в кэше tradeOffers! Изменения не сохранены в NBT.");
+                }
+            }
         }
+    }
+
+    /**
+     * Ищет в списке NBT-тегов сделку, идентичную переданному объекту MerchantOffer,
+     * и обновляет поле "uses".
+     */
+    private void syncOfferUsesBack(net.minecraft.nbt.ListTag nbtOffers, net.minecraft.world.item.trading.MerchantOffer offer) {
+        for (int i = 0; i < nbtOffers.size(); i++) {
+            net.minecraft.nbt.CompoundTag tag = nbtOffers.getCompound(i);
+
+            // Сверяем предметы, используя ТВОИ ключи: input1, input2, output [4, 13]
+            if (compareItem(tag.getCompound("input1"), offer.getBaseCostA()) &&
+                    compareItem(tag.getCompound("input2"), offer.getCostB()) &&
+                    compareItem(tag.getCompound("output"), offer.getResult())) {
+
+                tag.putInt("uses", offer.getUses()); // Записываем прогресс [11]
+                break;
+            }
+        }
+    }
+
+    private boolean isSameOffer(net.minecraft.nbt.CompoundTag tag, net.minecraft.world.item.trading.MerchantOffer offer) {
+        // Сверка первого входного предмета, второго (если есть) и результата [8, 9]
+        return compareItem(tag.getCompound("buy"), offer.getBaseCostA()) &&
+                compareItem(tag.getCompound("buyB"), offer.getCostB()) &&
+                compareItem(tag.getCompound("sell"), offer.getResult());
+    }
+
+    private boolean compareItem(net.minecraft.nbt.CompoundTag tag, net.minecraft.world.item.ItemStack stack) {
+        if (stack.isEmpty()) return tag.isEmpty();
+        if (tag.isEmpty()) return stack.isEmpty();
+
+        String tagId = tag.getString("id");
+        String stackId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
+
+        return tagId.equals(stackId) && tag.getByte("Count") == (byte) stack.getCount();
     }
 
     @Override
@@ -682,11 +742,40 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity, Merchant
 
         if (this.getTradingEnabled()) {
             if (!this.level().isClientSide) {
+
+                // ================================================================
+                // ПРОВЕРКА РАСПИСАНИЯ (Решение Проблемы 4)
+                // ================================================================
+                if (this.isScheduleEnabled()) {
+                    com.questnpc.entity.schedule.ScheduleEntry active = this.getActiveScheduleEntry();
+
+                    // Проверяем: есть ли активный слот И разрешена ли в нём торговля?
+                    // Торговля разрешена, если тип слота TRADE, ЛИБО тип ACTIVITY и включен флаг interactTrade
+                    boolean canTradeNow = active != null && (
+                            active.type == com.questnpc.entity.schedule.ScheduleEntry.Type.TRADE ||
+                                    (active.type == com.questnpc.entity.schedule.ScheduleEntry.Type.ACTIVITY && active.interactTrade)
+                    );
+
+                    if (!canTradeNow) {
+                        // Если по расписанию сейчас торговать нельзя — просто выходим.
+                        // Опционально: можно раскомментировать строчку ниже, чтобы писать игроку в чат
+                        // player.displayClientMessage(net.minecraft.network.chat.Component.literal("§cТорговец сейчас занят!"), true);
+                        return InteractionResult.sidedSuccess(this.level().isClientSide);
+                    }
+                }
+
+                // ================================================================
+                // СБРОС КЭША (Решение Проблем 2 и 3)
+                // ================================================================
+                // Обнуляем старый список сделок. Метод openTradingScreen ниже сразу же
+                // вызовет getOffers(), который из-за null пересоберет актуальные данные
+                // и лимиты прямо из NBT!
+                this.tradeOffers = null;
+
                 // 1. Запоминаем игрока
                 this.setTradingPlayer(player);
 
-                // 2. Вызываем тот самый метод, который ты нашёл!
-                // Параметры: игрок, имя NPC, уровень (ставим 1)
+                // 2. Вызываем ванильный метод открытия интерфейса
                 this.openTradingScreen(player, this.getDisplayName(), 1);
 
                 QuestNPCLogger.debug("Торговля открыта через openTradingScreen для {}", player.getName().getString());
@@ -697,24 +786,62 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity, Merchant
         return super.mobInteract(player, hand);
     }
 
+    public void restockAllTrades() {
+        for (TradeSet set : this.tradeSets) {
+            for (int i = 0; i < set.offers.size(); i++) {
+                net.minecraft.nbt.CompoundTag tag = set.offers.getCompound(i);
+                // Если refilable не указан (старые торги) или он равен true
+                if (!tag.contains("refilable") || tag.getBoolean("refilable")) {
+                    tag.putInt("uses", 0); // Обнуляем использование
+                }
+            }
+        }
+        this.tradeOffers = null; // Инвалидируем кэш
+        QuestNPCLogger.debug("NPC " + this.getId() + " пополнил свои запасы!");
+    }
+
     @Override
     public void tick() {
         super.tick();
         if (this.level().isClientSide()) return;
+
+        // ================================================================
+        // УМНАЯ ЛОГИКА ПОПОЛНЕНИЯ (Защита от /time set)
+        // ================================================================
+        long currentTime = this.level().getDayTime();
+
+        if (this.lastTick == -1) {
+            // Первый запуск (или после обновления): просто запоминаем текущее время
+            this.lastTick = currentTime;
+        } else {
+            // Ситуация 1: Время пошло вспять (кто-то написал /time set 0 или /time set day)
+            boolean timeWentBackwards = currentTime < this.lastTick;
+
+            // Ситуация 2: Наступил новый день естественно (или через /time add 1d)
+            boolean newDayStarted = (currentTime / 24000L) > (this.lastTick / 24000L);
+
+            // Если произошло любое из этих событий — сбрасываем лимиты торгов
+            if (timeWentBackwards || newDayStarted) {
+                this.restockAllTrades();
+                QuestNPCLogger.debug("Торги обновлены! Время вспять: " + timeWentBackwards + ", Новый день: " + newDayStarted);
+            }
+
+            // ВАЖНО: Всегда обновляем память актуальным временем
+            this.lastTick = currentTime;
+        }
+        // ================================================================
 
         // Синхронизация пути с клиентами для debug-визуализации
         syncPathToClients();
 
         if (!isBound()) return;
 
-        // Safety net не должен мешать расписанию — оно может увести NPC
-        // за пределы патрульного радиуса по задумке.
+        // Safety net не должен мешать расписанию
         if (isScheduleEnabled() && getActiveScheduleEntry() != null) return;
 
         BlockPos center = getBoundBlockPos();
-        // Ушёл слишком далеко → срочный возврат к центру
         double limitSq = (PATROL_RADIUS * 1.5) * (PATROL_RADIUS * 1.5);
-        if (this.distanceToSqr(Vec3.atCenterOf(center)) > limitSq) {
+        if (this.distanceToSqr(net.minecraft.world.phys.Vec3.atCenterOf(center)) > limitSq) {
             this.getNavigation().moveTo(center.getX() + 0.5, center.getY(), center.getZ() + 0.5, 1.0D);
         }
     }
@@ -726,6 +853,11 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity, Merchant
     @Override
     public void addAdditionalSaveData(CompoundTag tag) {
         super.addAdditionalSaveData(tag);
+
+        // === НОВЫЙ КОД (Таймер торгов) ===
+        tag.putLong("LastTick", this.lastTick);
+        // ==================================
+
         BlockPos bound = getBoundBlockPos();
         if (bound != null) {
             tag.putInt("BoundBlockX", bound.getX());
@@ -774,6 +906,14 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity, Merchant
     @Override
     public void readAdditionalSaveData(CompoundTag tag) {
         super.readAdditionalSaveData(tag);
+
+        // === НОВЫЙ КОД (Таймер торгов) ===
+        if (tag.contains("LastTick")) {
+            this.lastTick = tag.getLong("LastTick");
+        } else {
+            this.lastTick = -1;
+        }
+        // ==================================
 
         // Настройки патруля (загружаем перед activatePatrol, чтобы goal получил правильные значения)
         if (tag.contains("PatrolSpeed")) {

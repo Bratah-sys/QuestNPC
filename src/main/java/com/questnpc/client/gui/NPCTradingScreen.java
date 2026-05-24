@@ -497,8 +497,7 @@ public class NPCTradingScreen extends Screen {
                     count2Boxes[slot].setValue(countText(offer.input2));
                     countOutBoxes[slot].setValue(countText(offer.output));
                     limitBoxes[slot].setValue(offer.limitText.equals("0") ? "0" : offer.limitText);
-                    refillBtns[slot].setMessage(Component.translatable(
-                            offer.refilable ? "gui.questnpc.trading.refill_on" : "gui.questnpc.trading.refill_off"));
+                    refillBtns[slot].setMessage(Component.translatable(offer.refilable ? "gui.questnpc.trading.refill_on" : "gui.questnpc.trading.refill_off"));
                 }
             }
         } finally {
