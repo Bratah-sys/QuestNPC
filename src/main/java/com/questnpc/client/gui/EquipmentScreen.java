@@ -131,6 +131,11 @@ public class EquipmentScreen extends Screen {
 
     private void applyEquipment() {
         ModNetwork.INSTANCE.sendToServer(new UpdateEquipmentPacket(npc.getId(), pending));
+        // v2.8.1: обновляем снапшот в parent-меню локально, чтобы при повторном открытии
+        // Equipment видеть свежие слоты, не дожидаясь нового OpenNPCMenuPacket с сервера.
+        if (parentScreen instanceof NPCMenuScreen npcm) {
+            npcm.setEquipmentSnapshot(pending);
+        }
         Minecraft.getInstance().setScreen(parentScreen);
     }
 

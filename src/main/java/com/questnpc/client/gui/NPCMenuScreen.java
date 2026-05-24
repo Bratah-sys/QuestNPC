@@ -593,6 +593,19 @@ public class NPCMenuScreen extends Screen {
         this.currentSchedule = schedule != null ? new ArrayList<>(schedule) : new ArrayList<>();
     }
 
+    /**
+     * v2.8.1: обновляет локальный снимок экипировки после Apply в {@link EquipmentScreen}.
+     * Глубокая копия — изменения в одном экране не утекают в другой через ссылку.
+     */
+    public void setEquipmentSnapshot(net.minecraft.world.item.ItemStack[] equipment) {
+        if (equipment == null || equipment.length != QuestNPCEntity.EQUIPMENT_SLOTS) return;
+        for (int i = 0; i < QuestNPCEntity.EQUIPMENT_SLOTS; i++) {
+            currentEquipment[i] = equipment[i] != null
+                    ? equipment[i].copy()
+                    : net.minecraft.world.item.ItemStack.EMPTY;
+        }
+    }
+
     // ═══ Закрытие меню — уведомляем сервер для закрытия сессии ═══
 
     private boolean closeSent = false;
