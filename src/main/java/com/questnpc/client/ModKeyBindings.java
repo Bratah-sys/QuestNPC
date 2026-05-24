@@ -3,6 +3,8 @@ package com.questnpc.client;
 import com.mojang.blaze3d.platform.InputConstants;
 import com.questnpc.QuestNPCLogger;
 import com.questnpc.client.debug.NPCDebugRenderer;
+import com.questnpc.client.gui.QuestBookOverlay;
+import com.questnpc.item.ModItems;
 import net.minecraft.client.KeyMapping;
 import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
@@ -12,6 +14,7 @@ import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import org.lwjgl.glfw.GLFW;
+import top.theillusivec4.curios.api.CuriosApi;
 
 /**
  * Клиентские кейбинды мода QuestNPC.
@@ -49,12 +52,25 @@ public class ModKeyBindings {
     /**
      * Обработка нажатий. Регистрируется на Forge EVENT_BUS.
      */
+    private static int curiosPollCounter = 0;
+
     @SubscribeEvent
     public static void onClientTick(TickEvent.ClientTickEvent event) {
         if (event.phase != TickEvent.Phase.END) return;
 
         Minecraft mc = Minecraft.getInstance();
-        if (mc.player == null || mc.level == null) return;
+        if (mc.player == null || mc.level == null) {
+            QuestBookOverlay.hasBookEquippedCached = false;
+            return;
+        }
+
+        // MED-001: опрашиваем Curios раз в секунду, не на каждом кадре рендера.
+        if (++curiosPollCounter >= 20) {
+            curiosPollCounter = 0;
+            QuestBookOverlay.hasBookEquippedCached = CuriosApi.getCuriosInventory(mc.player).map(inv ->
+                    inv.findFirstCurio(stack -> stack.is(ModItems.QUEST_BOOK.get())).isPresent()
+            ).orElse(false);
+        }
 
         while (RECALCULATE_ZONE.consumeClick()) {
             NPCDebugRenderer.clearCache();
