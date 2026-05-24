@@ -348,14 +348,18 @@ public class NPCTradingScreen extends Screen {
         }
 
         // ── Scroll buttons ────────────────────────────────────────────
-        int scrollY = panelY + ROW_AREA_START + VISIBLE_ROWS * ROW_HEIGHT + 4;
+        // v2.8.1: \u0432\u0435\u0440\u0442\u0438\u043A\u0430\u043B\u044C\u043D\u0430\u044F \u043F\u043E\u043B\u043E\u0441\u0430 \u0441\u043F\u0440\u0430\u0432\u0430 \u043E\u0442 \u0441\u0442\u0440\u043E\u043A \u0441\u0434\u0435\u043B\u043E\u043A \u2014 \u0434\u0430\u043B\u0435\u043A\u043E \u043E\u0442 Apply
+        // (\u0440\u0430\u043D\u044C\u0448\u0435 \u043E\u0431\u0435 \u043A\u043D\u043E\u043F\u043A\u0438 \u0441\u0438\u0434\u0435\u043B\u0438 \u043D\u0430 panelY+284, \u043F\u0435\u0440\u0435\u043A\u0440\u044B\u0432\u0430\u044F Apply \u043D\u0430 panelY+286).
+        int scrollStripX = panelX + PANEL_WIDTH - PADDING - 14;
+        int scrollAreaTop = panelY + ROW_AREA_START + 2;
+        int scrollAreaBottom = panelY + ROW_AREA_START + VISIBLE_ROWS * ROW_HEIGHT - 16;
         scrollUpBtn = this.addRenderableWidget(new DarkButton(
-                panelX + PANEL_WIDTH - PADDING - 42, scrollY, 18, 14,
+                scrollStripX, scrollAreaTop, 14, 14,
                 Component.literal("\u25B2"),
                 button -> scroll(-1)
         ));
         scrollDownBtn = this.addRenderableWidget(new DarkButton(
-                panelX + PANEL_WIDTH - PADDING - 20, scrollY, 18, 14,
+                scrollStripX, scrollAreaBottom, 14, 14,
                 Component.literal("\u25BC"),
                 button -> scroll(1)
         ));
