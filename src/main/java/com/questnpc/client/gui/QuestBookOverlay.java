@@ -13,7 +13,10 @@ public class QuestBookOverlay {
     public static volatile boolean hasBookEquippedCached = false;
 
     /** Флаг «есть новый квест» — переключается биндингом J, в будущем будет дёргаться из сетевого ивента. */
-    public static volatile boolean hasNewQuest = false;
+    private static volatile boolean hasNewQuest = false;
+
+    public static boolean hasNewQuest() { return hasNewQuest; }
+    public static void setHasNewQuest(boolean value) { hasNewQuest = value; }
 
     public static final IGuiOverlay HUD_QUEST_BOOK = (gui, guiGraphics, partialTick, width, height) -> {
         Minecraft mc = Minecraft.getInstance();
@@ -22,7 +25,7 @@ public class QuestBookOverlay {
 
         int x = (width / 2) + 98;
         int y = height - 21;
-        ResourceLocation currentIcon = hasNewQuest ? ICON_NOTIFICATION : ICON_NORMAL;
+        ResourceLocation currentIcon = hasNewQuest() ? ICON_NOTIFICATION : ICON_NORMAL;
 
         RenderSystem.enableBlend();
         guiGraphics.blit(currentIcon, x, y, 0, 0, 16, 16, 16, 16);

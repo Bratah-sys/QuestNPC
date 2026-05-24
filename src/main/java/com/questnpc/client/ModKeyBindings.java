@@ -20,9 +20,7 @@ import top.theillusivec4.curios.api.CuriosApi;
  * Клиентские кейбинды мода QuestNPC.
  * Регистрация через RegisterKeyMappingsEvent (mod bus), обработка через ClientTickEvent (Forge bus).
  */
-
 @Mod.EventBusSubscriber(modid = "questnpc", bus = Mod.EventBusSubscriber.Bus.FORGE, value = Dist.CLIENT)
-
 public class ModKeyBindings {
 
     public static final KeyMapping RECALCULATE_ZONE = new KeyMapping(
@@ -47,7 +45,6 @@ public class ModKeyBindings {
         event.register(OPEN_QUEST_BOOK);
         QuestNPCLogger.info("Кейбинды QuestNPC зарегистрированы");
     }
-
 
     /**
      * Обработка нажатий. Регистрируется на Forge EVENT_BUS.
@@ -86,7 +83,7 @@ public class ModKeyBindings {
 
         while (OPEN_QUEST_BOOK.consumeClick()) {
             // Переключаем статус "Новый квест" в оверлее
-            com.questnpc.client.gui.QuestBookOverlay.hasNewQuest = !com.questnpc.client.gui.QuestBookOverlay.hasNewQuest;
+            QuestBookOverlay.setHasNewQuest(!QuestBookOverlay.hasNewQuest());
 
             QuestNPCLogger.info("Статус уведомления изменен.");
 

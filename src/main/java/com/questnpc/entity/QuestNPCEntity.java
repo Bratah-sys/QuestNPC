@@ -202,7 +202,9 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity, Merchant
 
     @Override
     public void overrideOffers(MerchantOffers merchantOffers) {
-
+        // LOW-001 (v2.8.2): vanilla Merchant API requires this. QuestNPC stores offers
+        // in its own TradeSets NBT structure (synced via UpdateTradeOffersPacket and
+        // NBT save/load), so vanilla overrideOffers is intentionally a no-op.
     }
 
     @Override
@@ -211,7 +213,13 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity, Merchant
         offer.increaseUses();
 
         if (!this.level().isClientSide) {
-            QuestNPCLogger.debug("Сделка совершена! Текущее использование: " + offer.getUses());
+            // LOW-009 (v2.8.2): расширенный контекст — NPC id, player, items, текущее uses.
+            QuestNPCLogger.debug("Trade completed: NPC {} with player {} ({} -> {}), uses={}",
+                    this.getId(),
+                    this.tradingPlayer != null ? this.tradingPlayer.getName().getString() : "?",
+                    offer.getBaseCostA().getItem(),
+                    offer.getResult().getItem(),
+                    offer.getUses());
 
             // Шаг 2: Проверяем, что у нас есть кэш сделок
             if (this.tradeOffers != null) {
