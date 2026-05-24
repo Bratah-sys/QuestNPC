@@ -18,7 +18,7 @@ import net.minecraft.network.chat.Component;
 public class NPCAttributesScreen extends Screen {
 
     private static final int PANEL_WIDTH  = 280;
-    private static final int PANEL_HEIGHT = 240;
+    private static final int PANEL_HEIGHT = 320;
     private static final int PADDING      = 12;
     private static final int SECTION_PAD  = 8;
 
@@ -31,11 +31,18 @@ public class NPCAttributesScreen extends Screen {
     private EditBox speedField;
     private EditBox delayMinField;
     private EditBox delayMaxField;
+    private EditBox healthMaxField;
+    private boolean pendingHeal = false;
 
     private boolean speedValid = true;
     private boolean delayMinValid = true;
     private boolean delayMaxValid = true;
     private boolean delayRangeValid = true;
+    private boolean healthValid = true;
+
+    // Y-координаты секций — кэшируем в init() чтобы render() читал те же значения
+    private int healthSectionY;
+    private int healthFieldY;
 
     private int panelX, panelY;
 
@@ -119,6 +126,29 @@ public class NPCAttributesScreen extends Screen {
             }
         ));
 
+        // ═══ Секция: Здоровье (v2.8.0) ═══
+        healthSectionY = delayFieldY + fieldHeight + 30;
+        healthFieldY = healthSectionY + 30;
+
+        healthMaxField = new EditBox(this.font, contentX + SECTION_PAD, healthFieldY, 60, fieldHeight,
+                Component.translatable("gui.questnpc.attributes.health_max"));
+        healthMaxField.setMaxLength(6);
+        healthMaxField.setValue(formatHealth(npc.getMaxHealth()));
+        healthMaxField.setResponder(text -> validateAll());
+        healthMaxField.setBordered(false);
+        this.addRenderableWidget(healthMaxField);
+
+        // Кнопка "Исцелить" — выставляет флаг, реальный heal — в applySettings().
+        this.addRenderableWidget(new DarkButton(
+            contentX + SECTION_PAD + 66, healthFieldY, 80, fieldHeight,
+            Component.translatable("gui.questnpc.attributes.heal_btn"),
+            button -> {
+                pendingHeal = true;
+                button.setMessage(Component.translatable("gui.questnpc.attributes.heal_btn_pending"));
+            },
+            NPCMenuScreen.BTN_GREEN_BG, NPCMenuScreen.BTN_GREEN_HOVER, 0xFFFFFFFF
+        ));
+
         // ═══ Кнопки внизу ═══
         int btnY = panelY + PANEL_HEIGHT - 36;
         int btnW = (contentW - 8) / 2;
@@ -149,6 +179,10 @@ public class NPCAttributesScreen extends Screen {
         return s;
     }
 
+    private static String formatHealth(double hp) {
+        return String.format(java.util.Locale.ROOT, "%.1f", hp);
+    }
+
     private void validateAll() {
         speedValid = false;
         try {
@@ -172,21 +206,29 @@ public class NPCAttributesScreen extends Screen {
 
         delayRangeValid = delayMinValid && delayMaxValid && minVal <= maxVal;
 
+        healthValid = false;
+        try {
+            double hp = Double.parseDouble(healthMaxField.getValue());
+            healthValid = hp >= 1.0 && hp <= 1024.0;
+        } catch (NumberFormatException ignored) {}
+
         speedField.setTextColor(speedValid ? 0xFFFFFF : (NPCMenuScreen.TEXT_RED & 0x00FFFFFF));
         delayMinField.setTextColor(delayMinValid && delayRangeValid ? 0xFFFFFF : (NPCMenuScreen.TEXT_RED & 0x00FFFFFF));
         delayMaxField.setTextColor(delayMaxValid && delayRangeValid ? 0xFFFFFF : (NPCMenuScreen.TEXT_RED & 0x00FFFFFF));
+        healthMaxField.setTextColor(healthValid ? 0xFFFFFF : (NPCMenuScreen.TEXT_RED & 0x00FFFFFF));
     }
 
     private void applySettings() {
         validateAll();
-        if (!speedValid || !delayMinValid || !delayMaxValid || !delayRangeValid) return;
+        if (!speedValid || !delayMinValid || !delayMaxValid || !delayRangeValid || !healthValid) return;
 
         double speed = Double.parseDouble(speedField.getValue());
         int delayMin = Integer.parseInt(delayMinField.getValue());
         int delayMax = Integer.parseInt(delayMaxField.getValue());
+        double maxHealth = Double.parseDouble(healthMaxField.getValue());
 
         ModNetwork.INSTANCE.sendToServer(
-                new UpdateNPCSettingsPacket(npc.getId(), speed, delayMin, delayMax)
+                new UpdateNPCSettingsPacket(npc.getId(), speed, delayMin, delayMax, maxHealth, pendingHeal)
         );
         this.onClose();
     }
@@ -237,6 +279,24 @@ public class NPCAttributesScreen extends Screen {
 
         Component delayHint = Component.translatable("gui.questnpc.npc_menu.delay_hint");
         g.drawString(this.font, delayHint, contentX + SECTION_PAD, delayFieldY + 20,
+                NPCMenuScreen.TEXT_GRAY & 0x00FFFFFF, false);
+
+        // ═══ Секция: Здоровье (v2.8.0) ═══
+        NPCMenuScreen.drawSection(g, this.font, contentX, healthSectionY, contentW, 68,
+                Component.translatable("gui.questnpc.attributes.health_section").getString());
+
+        // Текущее / Макс
+        String currentLabel = String.format(java.util.Locale.ROOT,
+                Component.translatable("gui.questnpc.attributes.health_current").getString(),
+                npc.getHealth(), npc.getMaxHealth());
+        g.drawString(this.font, currentLabel, contentX + SECTION_PAD, healthSectionY + 18,
+                NPCMenuScreen.TEXT_GRAY & 0x00FFFFFF, false);
+
+        // Фон поля Max HP
+        NPCMenuScreen.drawEditBoxBg(g, contentX + SECTION_PAD - 2, healthFieldY - 2, 64, 20, healthValid);
+
+        Component healthHint = Component.translatable("gui.questnpc.attributes.health_hint");
+        g.drawString(this.font, healthHint, contentX + SECTION_PAD, healthFieldY + 20,
                 NPCMenuScreen.TEXT_GRAY & 0x00FFFFFF, false);
 
         // Футер

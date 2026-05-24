@@ -6,6 +6,8 @@ import net.minecraft.network.FriendlyByteBuf;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.Entity;
+import net.minecraft.world.entity.ai.attributes.AttributeInstance;
+import net.minecraft.world.entity.ai.attributes.Attributes;
 import net.minecraftforge.network.NetworkEvent;
 
 import java.util.function.Supplier;
@@ -19,12 +21,17 @@ public class UpdateNPCSettingsPacket {
     private final double speed;
     private final int delayMin;
     private final int delayMax;
+    private final double maxHealth;
+    private final boolean heal;
 
-    public UpdateNPCSettingsPacket(int entityId, double speed, int delayMin, int delayMax) {
+    public UpdateNPCSettingsPacket(int entityId, double speed, int delayMin, int delayMax,
+                                   double maxHealth, boolean heal) {
         this.entityId = entityId;
         this.speed = speed;
         this.delayMin = delayMin;
         this.delayMax = delayMax;
+        this.maxHealth = maxHealth;
+        this.heal = heal;
     }
 
     public static void encode(UpdateNPCSettingsPacket packet, FriendlyByteBuf buf) {
@@ -32,6 +39,8 @@ public class UpdateNPCSettingsPacket {
         buf.writeDouble(packet.speed);
         buf.writeVarInt(packet.delayMin);
         buf.writeVarInt(packet.delayMax);
+        buf.writeDouble(packet.maxHealth);
+        buf.writeBoolean(packet.heal);
     }
 
     public static UpdateNPCSettingsPacket decode(FriendlyByteBuf buf) {
@@ -39,7 +48,9 @@ public class UpdateNPCSettingsPacket {
                 buf.readVarInt(),
                 buf.readDouble(),
                 buf.readVarInt(),
-                buf.readVarInt()
+                buf.readVarInt(),
+                buf.readDouble(),
+                buf.readBoolean()
         );
     }
 
@@ -90,6 +101,27 @@ public class UpdateNPCSettingsPacket {
                     player.getName().getString(), npc.getId(), oldSpeed, packet.speed);
             QuestNPCLogger.info("Игрок {} изменил задержку NPC {}: {}-{}с -> {}-{}с",
                     player.getName().getString(), npc.getId(), oldDelayMin, oldDelayMax, packet.delayMin, packet.delayMax);
+
+            // v2.8.0: применяем max HP (defense-in-depth: клиент валидирует, сервер тоже).
+            if (packet.maxHealth >= 1.0 && packet.maxHealth <= 1024.0) {
+                AttributeInstance hp = npc.getAttribute(Attributes.MAX_HEALTH);
+                if (hp != null && hp.getBaseValue() != packet.maxHealth) {
+                    double oldMax = hp.getBaseValue();
+                    hp.setBaseValue(packet.maxHealth);
+                    QuestNPCLogger.info("Игрок {} изменил Max HP NPC {}: {} -> {}",
+                            player.getName().getString(), npc.getId(), oldMax, packet.maxHealth);
+                }
+            } else if (packet.maxHealth != 0.0) {
+                // 0.0 — sentinel «не менять»; иное вне диапазона — варн.
+                QuestNPCLogger.warn("Невалидное Max HP от игрока {} для NPC {}: {} (вне 1.0-1024.0)",
+                        player.getName().getString(), npc.getId(), packet.maxHealth);
+            }
+
+            if (packet.heal) {
+                npc.setHealth(npc.getMaxHealth());
+                QuestNPCLogger.info("Игрок {} исцелил NPC {} до {}",
+                        player.getName().getString(), npc.getId(), npc.getMaxHealth());
+            }
 
             player.sendSystemMessage(Component.translatable("message.questnpc.settings_applied"));
         });
