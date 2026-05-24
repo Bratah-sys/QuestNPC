@@ -136,7 +136,10 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity, Merchant
                 if (tag.contains("input1")) vanillaTag.put("buy", tag.get("input1"));
                 if (tag.contains("input2")) vanillaTag.put("buyB", tag.get("input2"));
                 if (tag.contains("output")) vanillaTag.put("sell", tag.get("output"));
-                if (!tag.contains("maxUses")) vanillaTag.putInt("maxUses", 999);
+                // Sentinel "∞": админский UI пишет maxUses=0, а legacy сделки могут не иметь ключа вовсе.
+                // Оба случая означают «без лимита» — транслируем в Integer.MAX_VALUE для ванильного MerchantOffer.
+                int rawMax = vanillaTag.getInt("maxUses");
+                if (rawMax <= 0) vanillaTag.putInt("maxUses", Integer.MAX_VALUE);
 
                 newOffers.add(new net.minecraft.world.item.trading.MerchantOffer(vanillaTag));
             }
