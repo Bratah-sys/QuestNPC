@@ -146,20 +146,19 @@ public class NPCMenuScreen extends Screen {
         int nameY = panelY + 30;
         int nameFieldW = rightW / 2 - PADDING;
         nameField = new EditBox(this.font, rightX + PADDING, nameY, nameFieldW, 16,
-                Component.literal("Name"));
+                Component.literal("Name")) {
+            @Override
+            public void setFocused(boolean focused) {
+                boolean wasFocused = this.isFocused();
+                super.setFocused(focused);
+                if (wasFocused && !focused) applyName();
+            }
+        };
         nameField.setMaxLength(32);
         String currentName = npc.hasCustomName() ? npc.getCustomName().getString() : npc.getName().getString();
         nameField.setValue(currentName);
         nameField.setBordered(false);
         this.addRenderableWidget(nameField);
-
-        // Кнопка подтверждения имени
-        this.addRenderableWidget(new DarkButton(
-            rightX + PADDING + nameFieldW + 4, nameY - 1, 18, 18,
-            Component.literal("\u2713"),
-            button -> applyName(),
-            BTN_GREEN_BG, BTN_GREEN_HOVER, 0xFFFFFFFF
-        ));
 
         // ═══ Правая панель: сетка кнопок ═══
         int gridStartY = nameY + 24;
@@ -168,12 +167,10 @@ public class NPCMenuScreen extends Screen {
         int gap = 4;
 
         String[][] gridButtons = {
-            {"gui.questnpc.menu.btn.import",    "gui.questnpc.menu.btn.export"},
             {"gui.questnpc.menu.btn.actions",   "gui.questnpc.menu.btn.attributes"},
             {"gui.questnpc.menu.btn.dialog",    "gui.questnpc.menu.btn.equipment"},
             {"gui.questnpc.menu.btn.goals",     "gui.questnpc.menu.btn.pose"},
-            {"gui.questnpc.menu.btn.position",  "gui.questnpc.menu.btn.rotation"},
-            {"gui.questnpc.menu.btn.scale",     "gui.questnpc.menu.btn.trading"},
+            {"gui.questnpc.menu.btn.position",  "gui.questnpc.menu.btn.trading"},
         };
 
         for (int row = 0; row < gridButtons.length; row++) {
@@ -224,11 +221,6 @@ public class NPCMenuScreen extends Screen {
         int leftBtnY = panelY + TOTAL_HEIGHT - 60;
         this.addRenderableWidget(new DarkButton(
             panelX + PADDING, leftBtnY, leftBtnW, 16,
-            Component.translatable("gui.questnpc.menu.btn.change_skin"),
-            button -> {}
-        ));
-        this.addRenderableWidget(new DarkButton(
-            panelX + PADDING, leftBtnY + 20, leftBtnW, 16,
             Component.translatable("gui.questnpc.menu.btn.change_model"),
             button -> {
                 // Открываем каталог моделей
@@ -245,28 +237,12 @@ public class NPCMenuScreen extends Screen {
 
         // ═══ Нижняя панель: утилиты ═══
         int bottomY = panelY + TOTAL_HEIGHT - 28;
-        int bottomBtnW = (TOTAL_WIDTH - PADDING * 4) / 3;
+        int bottomBtnW = (TOTAL_WIDTH - PADDING * 3) / 2;
 
-        // Копия UUID
-        this.addRenderableWidget(new DarkButton(
-            panelX + PADDING, bottomY, bottomBtnW, 20,
-            Component.translatable("gui.questnpc.menu.btn.copy_uuid"),
-            button -> {
-                String uuid = npc.getUUID().toString();
-                Minecraft.getInstance().keyboardHandler.setClipboard(uuid);
-                if (Minecraft.getInstance().player != null) {
-                    Minecraft.getInstance().player.sendSystemMessage(
-                        Component.literal("\u00a7a[QuestNPC] ")
-                            .append(Component.translatable("gui.questnpc.menu.uuid_copied")));
-                }
-                QuestNPCLogger.info("Игрок скопировал UUID NPC {}", npc.getId());
-            },
-            BTN_GREEN_BG, BTN_GREEN_HOVER, 0xFFFFFFFF
-        ));
 
         // Применить модель (если выбрана)
         this.addRenderableWidget(new DarkButton(
-            panelX + PADDING + bottomBtnW + PADDING, bottomY, bottomBtnW, 20,
+            panelX + PADDING, bottomY, bottomBtnW, 20,
             Component.translatable("gui.questnpc.npc_menu.apply"),
             button -> applyModel(),
             BTN_GREEN_BG, BTN_GREEN_HOVER, 0xFFFFFFFF
@@ -274,7 +250,7 @@ public class NPCMenuScreen extends Screen {
 
         // Удалить
         deleteBtn = this.addRenderableWidget(new DarkButton(
-            panelX + PADDING + (bottomBtnW + PADDING) * 2, bottomY, bottomBtnW, 20,
+            panelX + PADDING + bottomBtnW + PADDING, bottomY, bottomBtnW, 20,
             Component.translatable("gui.questnpc.menu.btn.delete"),
             button -> handleDelete(),
             BTN_RED_BG, BTN_RED_HOVER, 0xFFFFFFFF
@@ -285,7 +261,19 @@ public class NPCMenuScreen extends Screen {
     private void applyName() {
         String name = nameField.getValue().trim();
         if (name.isEmpty() || name.length() > 32) return;
+        String current = npc.hasCustomName() ? npc.getCustomName().getString() : npc.getName().getString();
+        if (name.equals(current)) return;
         ModNetwork.INSTANCE.sendToServer(new RenameNPCPacket(npc.getId(), name));
+    }
+
+    @Override
+    public boolean keyPressed(int keyCode, int scanCode, int modifiers) {
+        if (nameField.isFocused() && (keyCode == 257 || keyCode == 335)) { // ENTER, KP_ENTER
+            applyName();
+            this.setFocused(null);
+            return true;
+        }
+        return super.keyPressed(keyCode, scanCode, modifiers);
     }
 
     // ═══ Логика применения модели ═══
@@ -346,10 +334,6 @@ public class NPCMenuScreen extends Screen {
         int nameY = panelY + 30;
         int nameFieldW = rightW / 2 - PADDING;
         drawEditBoxBg(g, rightX + PADDING - 2, nameY - 2, nameFieldW + 4, 20, true);
-
-        // Registry ID
-        int regIdX = rightX + PADDING + nameFieldW + 26;
-        g.drawString(this.font, "entity.questnpc.quest_npc", regIdX, nameY + 4, TEXT_DARK_GRAY & 0x00FFFFFF, false);
 
         // ═══ Разделитель нижней панели ═══
         int bottomSepY = panelY + TOTAL_HEIGHT - 32;
