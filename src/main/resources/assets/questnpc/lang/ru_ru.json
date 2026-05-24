@@ -9,6 +9,7 @@
   "entity.questnpc.quest_npc.unbound": "Домашний блок не найден",
   "key.categories.questnpc": "QuestNPC",
   "key.questnpc.recalculate_zone": "Пересчёт зоны NPC",
+  "key.questnpc.open_quest_book": "Открыть книгу квестов",
   "gui.questnpc.npc_menu.title": "Квестовый NPC",
   "gui.questnpc.npc_menu.subtitle": "Настройка патрулирования",
   "gui.questnpc.npc_menu.tab.movement": "Движение",

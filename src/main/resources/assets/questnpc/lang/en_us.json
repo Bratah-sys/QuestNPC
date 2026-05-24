@@ -9,6 +9,7 @@
   "entity.questnpc.quest_npc.unbound": "No home block found",
   "key.categories.questnpc": "QuestNPC",
   "key.questnpc.recalculate_zone": "Recalculate NPC Zone",
+  "key.questnpc.open_quest_book": "Open Quest Book",
   "gui.questnpc.npc_menu.title": "Quest NPC",
   "gui.questnpc.npc_menu.subtitle": "Patrol Settings",
   "gui.questnpc.npc_menu.tab.movement": "Movement",
