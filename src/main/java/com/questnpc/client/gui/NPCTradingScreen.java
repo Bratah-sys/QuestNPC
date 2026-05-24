@@ -430,8 +430,13 @@ public class NPCTradingScreen extends Screen {
     }
 
     private void updateScrollButtons() {
-        scrollUpBtn.active   = scrollOffset > 0;
-        scrollDownBtn.active = scrollOffset < offers.size() - VISIBLE_ROWS;
+        // v2.8.0: скрываем scroll-кнопки когда прокручивать нечего —
+        // иначе они визуально торчат за кнопкой Apply на пустом трейдинге.
+        boolean needScroll = offers.size() > VISIBLE_ROWS;
+        scrollUpBtn.visible = needScroll;
+        scrollDownBtn.visible = needScroll;
+        scrollUpBtn.active   = needScroll && scrollOffset > 0;
+        scrollDownBtn.active = needScroll && scrollOffset < offers.size() - VISIBLE_ROWS;
         addBtn.active = offers.size() < MAX_OFFERS;
     }
 

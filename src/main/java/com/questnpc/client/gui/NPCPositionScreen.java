@@ -50,7 +50,8 @@ public class NPCPositionScreen extends Screen {
         ));
 
         // ═══ Кнопка "Сменить точку патруля" ═══
-        int changeBtnY = panelY + 110;
+        // v2.8.0: было +110 — налезало на posInfoY (sectionY+52 = panelY+108) с overflow ~7px.
+        int changeBtnY = panelY + 128;
         this.addRenderableWidget(new DarkButton(
             contentX, changeBtnY, contentW, 20,
             Component.translatable("gui.questnpc.npc_menu.change_patrol"),
