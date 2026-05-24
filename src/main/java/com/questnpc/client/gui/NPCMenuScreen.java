@@ -181,7 +181,7 @@ public class NPCMenuScreen extends Screen {
         String[][] gridButtons = {
             {"gui.questnpc.menu.btn.actions",   "gui.questnpc.menu.btn.attributes"},
             {"gui.questnpc.menu.btn.dialog",    "gui.questnpc.menu.btn.equipment"},
-            {"gui.questnpc.menu.btn.goals",     "gui.questnpc.menu.btn.pose"},
+            {"gui.questnpc.menu.btn.quests",    "gui.questnpc.menu.btn.pose"},
             {"gui.questnpc.menu.btn.position",  "gui.questnpc.menu.btn.trading"},
         };
 
