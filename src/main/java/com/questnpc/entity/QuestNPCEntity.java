@@ -792,6 +792,11 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity, Merchant
                     }
                 }
 
+                // MED-006: NPC уже торгует с другим игроком — не открывать второй экран.
+                if (this.getTradingPlayer() != null && this.getTradingPlayer() != player) {
+                    return InteractionResult.sidedSuccess(this.level().isClientSide);
+                }
+
                 // ================================================================
                 // СБРОС КЭША (Решение Проблем 2 и 3)
                 // ================================================================
@@ -832,6 +837,18 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity, Merchant
     public void tick() {
         super.tick();
         if (this.level().isClientSide()) return;
+
+        // CRIT-002: чистим tradingPlayer когда игрок реально перестал торговать
+        // (закрыл экран, умер, разлогинился, ушёл за 8 блоков).
+        if (this.tradingPlayer != null) {
+            boolean stillTrading = this.tradingPlayer.isAlive()
+                    && this.tradingPlayer.containerMenu instanceof net.minecraft.world.inventory.MerchantMenu
+                    && this.tradingPlayer.distanceToSqr(this) < 64.0;
+            if (!stillTrading) {
+                this.tradingPlayer = null;
+                this.tradeOffers = null;
+            }
+        }
 
         // ================================================================
         // УМНАЯ ЛОГИКА ПОПОЛНЕНИЯ (Защита от /time set)
