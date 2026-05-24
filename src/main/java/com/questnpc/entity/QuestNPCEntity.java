@@ -17,6 +17,7 @@ import net.minecraft.server.level.ServerLevel;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.sounds.SoundEvent;
+import net.minecraft.sounds.SoundEvents;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.InteractionResult;
 import net.minecraft.world.entity.EntityDimensions;
@@ -245,7 +246,7 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity, Merchant
 
     @Override
     public SoundEvent getNotifyTradeSound() {
-        return null;
+        return SoundEvents.VILLAGER_YES;
     }
 
     @Override
