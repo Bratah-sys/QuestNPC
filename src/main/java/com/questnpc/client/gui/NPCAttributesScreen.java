@@ -230,7 +230,8 @@ public class NPCAttributesScreen extends Screen {
         ModNetwork.INSTANCE.sendToServer(
                 new UpdateNPCSettingsPacket(npc.getId(), speed, delayMin, delayMax, maxHealth, pendingHeal)
         );
-        this.onClose();
+        // v2.8.1: возврат в parent-меню вместо onClose() (который закрывал всю цепочку GUI).
+        Minecraft.getInstance().setScreen(parentScreen);
     }
 
     @Override
