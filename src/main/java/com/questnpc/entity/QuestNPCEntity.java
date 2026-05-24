@@ -99,8 +99,7 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity, Merchant
 
     private Player tradingPlayer;
     private MerchantOffers tradeOffers;
-    protected net.minecraft.world.item.trading.MerchantOffers offers; // [3, 4]
-    private long lastTick = -1; // Теперь мы храним не день, а последний зафиксированный тик
+    private long lastTick = -1; // Время последнего тика — для restock-логики при смене дня / time set
     // --- Расписание ---
     public static final int MAX_SCHEDULE_ENTRIES = 10;
 
@@ -123,8 +122,8 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity, Merchant
 
     @Override
     public net.minecraft.world.item.trading.MerchantOffers getOffers() {
-        // Реализация CRIT-002: Загружаем список сделок только один раз [5, 6]
-        if (this.tradeOffers == null &&!this.level().isClientSide && this.tradingPlayer instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
+        // CRIT-002: загружаем список сделок только один раз, кэш инвалидируется в mobInteract.
+        if (this.tradeOffers == null && !this.level().isClientSide && this.tradingPlayer instanceof net.minecraft.server.level.ServerPlayer serverPlayer) {
 
             net.minecraft.nbt.ListTag nbtOffers = this.getActiveTradeOffers(serverPlayer);
             net.minecraft.world.item.trading.MerchantOffers newOffers = new net.minecraft.world.item.trading.MerchantOffers();
@@ -133,7 +132,7 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity, Merchant
                 net.minecraft.nbt.CompoundTag tag = nbtOffers.getCompound(i);
                 net.minecraft.nbt.CompoundTag vanillaTag = tag.copy();
 
-                // Твоя логика маппинга ключей [3]
+                // Маппинг QuestNPC-NBT (input1/input2/output) → ванильный MerchantOffer (buy/buyB/sell).
                 if (tag.contains("input1")) vanillaTag.put("buy", tag.get("input1"));
                 if (tag.contains("input2")) vanillaTag.put("buyB", tag.get("input2"));
                 if (tag.contains("output")) vanillaTag.put("sell", tag.get("output"));
@@ -146,7 +145,7 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity, Merchant
             }
             this.tradeOffers = newOffers;
         }
-        return this.tradeOffers!= null? this.tradeOffers : new net.minecraft.world.item.trading.MerchantOffers();
+        return this.tradeOffers != null ? this.tradeOffers : new net.minecraft.world.item.trading.MerchantOffers();
     }
 
     @Override
@@ -186,42 +185,6 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity, Merchant
                 }
             }
         }
-    }
-
-    /**
-     * Ищет в списке NBT-тегов сделку, идентичную переданному объекту MerchantOffer,
-     * и обновляет поле "uses".
-     */
-    private void syncOfferUsesBack(net.minecraft.nbt.ListTag nbtOffers, net.minecraft.world.item.trading.MerchantOffer offer) {
-        for (int i = 0; i < nbtOffers.size(); i++) {
-            net.minecraft.nbt.CompoundTag tag = nbtOffers.getCompound(i);
-
-            // Сверяем предметы, используя ТВОИ ключи: input1, input2, output [4, 13]
-            if (compareItem(tag.getCompound("input1"), offer.getBaseCostA()) &&
-                    compareItem(tag.getCompound("input2"), offer.getCostB()) &&
-                    compareItem(tag.getCompound("output"), offer.getResult())) {
-
-                tag.putInt("uses", offer.getUses()); // Записываем прогресс [11]
-                break;
-            }
-        }
-    }
-
-    private boolean isSameOffer(net.minecraft.nbt.CompoundTag tag, net.minecraft.world.item.trading.MerchantOffer offer) {
-        // Сверка первого входного предмета, второго (если есть) и результата [8, 9]
-        return compareItem(tag.getCompound("buy"), offer.getBaseCostA()) &&
-                compareItem(tag.getCompound("buyB"), offer.getCostB()) &&
-                compareItem(tag.getCompound("sell"), offer.getResult());
-    }
-
-    private boolean compareItem(net.minecraft.nbt.CompoundTag tag, net.minecraft.world.item.ItemStack stack) {
-        if (stack.isEmpty()) return tag.isEmpty();
-        if (tag.isEmpty()) return stack.isEmpty();
-
-        String tagId = tag.getString("id");
-        String stackId = net.minecraft.core.registries.BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
-
-        return tagId.equals(stackId) && tag.getByte("Count") == (byte) stack.getCount();
     }
 
     @Override
@@ -887,7 +850,7 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity, Merchant
 
         BlockPos center = getBoundBlockPos();
         double limitSq = (PATROL_RADIUS * 1.5) * (PATROL_RADIUS * 1.5);
-        if (this.distanceToSqr(net.minecraft.world.phys.Vec3.atCenterOf(center)) > limitSq) {
+        if (this.distanceToSqr(Vec3.atCenterOf(center)) > limitSq) {
             this.getNavigation().moveTo(center.getX() + 0.5, center.getY(), center.getZ() + 0.5, 1.0D);
         }
     }

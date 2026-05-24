@@ -139,8 +139,8 @@ public class QuestNPC {
         // Регистрация дебаг-рендерера на Forge EVENT_BUS (не на mod bus)
         MinecraftForge.EVENT_BUS.register(new NPCDebugRenderer());
         MinecraftForge.EVENT_BUS.register(new PatrolBrushRenderer());
-        MinecraftForge.EVENT_BUS.register(new ModKeyBindings());
-        QuestNPCLogger.info("NPCDebugRenderer, PatrolBrushRenderer и кейбинды зарегистрированы");
+        // LOW-008: ModKeyBindings уже на FORGE-шине через @Mod.EventBusSubscriber — ручная регистрация не нужна.
+        QuestNPCLogger.info("NPCDebugRenderer и PatrolBrushRenderer зарегистрированы");
 
         QuestNPCLogger.info("FMLClientSetupEvent: клиентская инициализация завершена");
     }
