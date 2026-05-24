@@ -223,6 +223,11 @@ public class NPCMenuScreen extends Screen {
                         Minecraft.getInstance().setScreen(
                                 new EquipmentScreen(npc, currentEquipment, this));
                     };
+                } else if (key.equals("gui.questnpc.menu.btn.quests")) {
+                    action = button -> {
+                        navigatingToSubScreen = true;
+                        Minecraft.getInstance().setScreen(new QuestsScreen(npc, this));
+                    };
                 } else {
                     action = button -> {}; // заглушка
                 }

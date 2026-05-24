@@ -175,5 +175,8 @@
   "gui.questnpc.schedule.current_time": "Now: %s",
   "gui.questnpc.schedule.dialog_soon": "Dialog interaction \u2014 coming soon",
   "gui.questnpc.schedule.quest_soon": "Quest interaction \u2014 coming soon",
-  "gui.questnpc.schedule.animation_wip": "GeckoLib animation trigger \u2014 coming soon"
+  "gui.questnpc.schedule.animation_wip": "GeckoLib animation trigger \u2014 coming soon",
+  "gui.questnpc.quests.title": "Quests of NPC: %s",
+  "gui.questnpc.quests.placeholder": "Quest editor will appear in upcoming iterations",
+  "gui.questnpc.quests.back": "\u2190 Back"
 }

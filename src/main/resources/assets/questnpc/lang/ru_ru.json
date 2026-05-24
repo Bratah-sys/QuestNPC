@@ -175,5 +175,8 @@
   "gui.questnpc.schedule.current_time": "Сейчас: %s",
   "gui.questnpc.schedule.dialog_soon": "Взаимодействие «Диалог» \u2014 скоро",
   "gui.questnpc.schedule.quest_soon": "Взаимодействие «Квест» \u2014 скоро",
-  "gui.questnpc.schedule.animation_wip": "Триггер GeckoLib-анимаций \u2014 скоро"
+  "gui.questnpc.schedule.animation_wip": "Триггер GeckoLib-анимаций \u2014 скоро",
+  "gui.questnpc.quests.title": "Квесты NPC: %s",
+  "gui.questnpc.quests.placeholder": "Управление квестами появится в следующих итерациях",
+  "gui.questnpc.quests.back": "\u2190 Назад"
 }
