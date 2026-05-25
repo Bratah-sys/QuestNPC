@@ -36,21 +36,22 @@ import java.util.List;
 public class NPCMenuScreen extends Screen {
 
     // ═══ Цветовая палитра ═══
-    static final int BG_OVERLAY     = 0xC0000000;
-    static final int BG_DARK        = 0xFF1A1A2E;
-    static final int SECTION_BG     = 0xFF1F2937;
-    static final int BORDER         = 0xFF4A5568;
-    static final int TEXT_WHITE     = 0xFFE2E8F0;
-    static final int TEXT_GRAY      = 0xFF9CA3AF;
-    static final int TEXT_DARK_GRAY = 0xFF6B7280;
-    static final int TEXT_CYAN      = 0xFF2DD4BF;
-    static final int TEXT_RED       = 0xFFFF5555;
-    static final int EDIT_BG        = 0xFF111827;
-    static final int SECTION_TITLE  = 0xFF3B82F6;
-    static final int BTN_GREEN_BG   = 0xFF10B981;
-    static final int BTN_GREEN_HOVER= 0xFF22C55E;
-    static final int BTN_GRAY_BG    = 0xFF374151;
-    static final int BTN_GRAY_HOVER = 0xFF4B5563;
+    // v2.9.2: повышено до public — design-system reuse в client/gui/picker/ pickers
+    public static final int BG_OVERLAY     = 0xC0000000;
+    public static final int BG_DARK        = 0xFF1A1A2E;
+    public static final int SECTION_BG     = 0xFF1F2937;
+    public static final int BORDER         = 0xFF4A5568;
+    public static final int TEXT_WHITE     = 0xFFE2E8F0;
+    public static final int TEXT_GRAY      = 0xFF9CA3AF;
+    public static final int TEXT_DARK_GRAY = 0xFF6B7280;
+    public static final int TEXT_CYAN      = 0xFF2DD4BF;
+    public static final int TEXT_RED       = 0xFFFF5555;
+    public static final int EDIT_BG        = 0xFF111827;
+    public static final int SECTION_TITLE  = 0xFF3B82F6;
+    public static final int BTN_GREEN_BG   = 0xFF10B981;
+    public static final int BTN_GREEN_HOVER= 0xFF22C55E;
+    public static final int BTN_GRAY_BG    = 0xFF374151;
+    public static final int BTN_GRAY_HOVER = 0xFF4B5563;
     private static final int BTN_RED_BG     = 0xFF7F1D1D;
     private static final int BTN_RED_HOVER  = 0xFFB91C1C;
 
@@ -558,26 +559,26 @@ public class NPCMenuScreen extends Screen {
     // ХЕЛПЕРЫ РЕНДЕРИНГА (package-private для подэкранов)
     // ═══════════════════════════════════════════════
 
-    static void drawPanel(GuiGraphics g, int x, int y, int w, int h) {
+    public static void drawPanel(GuiGraphics g, int x, int y, int w, int h) {
         g.fill(x + 2, y + 2, x + w + 2, y + h + 2, 0x40000000);
         g.fill(x, y, x + w, y + h, BG_DARK);
         drawOutlineRect(g, x, y, w, h, BORDER);
     }
 
-    static void drawOutlineRect(GuiGraphics g, int x, int y, int w, int h, int color) {
+    public static void drawOutlineRect(GuiGraphics g, int x, int y, int w, int h, int color) {
         g.fill(x, y, x + w, y + 1, color);
         g.fill(x, y + h - 1, x + w, y + h, color);
         g.fill(x, y, x + 1, y + h, color);
         g.fill(x + w - 1, y, x + w, y + h, color);
     }
 
-    static void drawEditBoxBg(GuiGraphics g, int x, int y, int w, int h, boolean valid) {
+    public static void drawEditBoxBg(GuiGraphics g, int x, int y, int w, int h, boolean valid) {
         g.fill(x, y, x + w, y + h, EDIT_BG);
         int borderColor = valid ? BORDER : TEXT_RED;
         drawOutlineRect(g, x, y, w, h, borderColor);
     }
 
-    static void drawSection(GuiGraphics g, net.minecraft.client.gui.Font font,
+    public static void drawSection(GuiGraphics g, net.minecraft.client.gui.Font font,
                              int x, int y, int w, int h, String title) {
         g.fill(x + 1, y + 1, x + w - 1, y + h - 1, SECTION_BG);
         drawOutlineRect(g, x, y, w, h, BORDER);
