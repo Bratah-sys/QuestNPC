@@ -150,6 +150,13 @@ public final class ModNetwork {
                 UpdateNPCQuestsPacket::decode,
                 UpdateNPCQuestsPacket::handle
         );
+        INSTANCE.registerMessage(
+                18,
+                OpenNPCTradePacket.class,
+                OpenNPCTradePacket::encode,
+                OpenNPCTradePacket::decode,
+                OpenNPCTradePacket::handle
+        );
     }
 
     private ModNetwork() {}
