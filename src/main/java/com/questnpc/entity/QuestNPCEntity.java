@@ -951,6 +951,92 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity, Merchant
         }
     }
 
+    /**
+     * Stage 5 (v2.9.4): server-side entry-point для player-side quest UI.
+     * Вызывается из {@link com.questnpc.network.OpenNPCQuestsPacket#handle} когда игрок
+     * кликает «Квесты» в хабе. Собирает три списка квестов и шлёт {@link com.questnpc.network.OpenPlayerQuestListPacket}.
+     *
+     * <p>Decision §5 (2026-05-25): once-per-player — completed квесты исключаются.
+     */
+    public void startServerQuestInteraction(net.minecraft.world.entity.player.Player player) {
+        if (this.level().isClientSide) return;
+        if (!(player instanceof net.minecraft.server.level.ServerPlayer sp)) return;
+        if (!this.questsEnabled || this.quests.isEmpty()) return;
+
+        net.minecraft.core.BlockPos npcPos = this.blockPosition();
+        final com.questnpc.entity.QuestNPCEntity self = this;
+
+        sp.getCapability(com.questnpc.capability.PlayerQuestProvider.CAP).ifPresent(prog -> {
+            java.util.List<com.questnpc.network.QuestSnapshots.QuestSnapshot> offerable = new java.util.ArrayList<>();
+            java.util.List<com.questnpc.network.QuestSnapshots.QuestProgressSnapshot> active = new java.util.ArrayList<>();
+            java.util.List<com.questnpc.network.QuestSnapshots.QuestSnapshot> turnInReady = new java.util.ArrayList<>();
+
+            for (com.questnpc.entity.quest.QuestDefinition q : this.quests) {
+                com.questnpc.capability.QuestKey key = new com.questnpc.capability.QuestKey(self.getUUID(), q.getId());
+
+                if (prog.isCompleted(key)) continue; // once-per-player
+
+                if (prog.isActive(key)) {
+                    if (q.isReadyToTurnIn(prog, key, sp)) {
+                        turnInReady.add(buildSnapshot(q));
+                    } else {
+                        active.add(buildProgressSnapshot(q, prog, key));
+                    }
+                } else if (q.canOfferTo(sp, npcPos, self)) {
+                    offerable.add(buildSnapshot(q));
+                }
+            }
+
+            com.questnpc.network.ModNetwork.INSTANCE.send(
+                    net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> sp),
+                    new com.questnpc.network.OpenPlayerQuestListPacket(
+                            self.getId(),
+                            self.getDisplayName().getString(),
+                            offerable, active, turnInReady));
+        });
+    }
+
+    private static com.questnpc.network.QuestSnapshots.QuestSnapshot buildSnapshot(com.questnpc.entity.quest.QuestDefinition q) {
+        java.util.List<String> objs = new java.util.ArrayList<>();
+        for (com.questnpc.entity.quest.QuestObjective o : q.getObjectives()) {
+            objs.add(com.questnpc.events.QuestChatHelper.describeObjective(o));
+        }
+        java.util.List<String> rewards = new java.util.ArrayList<>();
+        for (com.questnpc.entity.quest.QuestReward r : q.getRewards()) {
+            rewards.add(com.questnpc.events.QuestChatHelper.describeReward(r));
+        }
+        return new com.questnpc.network.QuestSnapshots.QuestSnapshot(
+                q.getId(), q.getTitle(), q.getDescription(), objs, rewards);
+    }
+
+    private static com.questnpc.network.QuestSnapshots.QuestProgressSnapshot buildProgressSnapshot(
+            com.questnpc.entity.quest.QuestDefinition q,
+            com.questnpc.capability.PlayerQuestProgress prog,
+            com.questnpc.capability.QuestKey key) {
+        java.util.List<com.questnpc.network.QuestSnapshots.ObjectiveProgressSnapshot> objs = new java.util.ArrayList<>();
+        for (com.questnpc.entity.quest.QuestObjective o : q.getObjectives()) {
+            // BringObjective шлёт «текущее по инвентарю» — но мы тут не имеем player'a в этом helper'е.
+            // Для simplicity: если Bring — текущее = 0, max = count; UI просто покажет «0/N». Реальный прогресс
+            // Bring проверяется в момент сдачи через isReadyToTurnIn.
+            long current;
+            if (o instanceof com.questnpc.entity.quest.objective.BringObjective) {
+                current = 0L; // Bring не отслеживается через progress map
+            } else {
+                current = prog.getProgress(key, o.getId());
+            }
+            objs.add(new com.questnpc.network.QuestSnapshots.ObjectiveProgressSnapshot(
+                    com.questnpc.events.QuestChatHelper.describeObjective(o),
+                    current,
+                    o.getMaxProgress()));
+        }
+        java.util.List<String> rewards = new java.util.ArrayList<>();
+        for (com.questnpc.entity.quest.QuestReward r : q.getRewards()) {
+            rewards.add(com.questnpc.events.QuestChatHelper.describeReward(r));
+        }
+        return new com.questnpc.network.QuestSnapshots.QuestProgressSnapshot(
+                q.getId(), q.getTitle(), q.getDescription(), objs, rewards);
+    }
+
     public void restockAllTrades() {
         for (TradeSet set : this.tradeSets) {
             for (int i = 0; i < set.offers.size(); i++) {

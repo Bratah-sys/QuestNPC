@@ -4,6 +4,7 @@ import com.questnpc.entity.quest.ObjectiveType;
 import com.questnpc.entity.quest.QuestObjective;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
+import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 
 /**
@@ -29,6 +30,56 @@ public class BringObjective extends QuestObjective {
     public void setCount(int v) { this.count = Math.max(1, v); }
     public boolean isConsumeOnTurnIn() { return consumeOnTurnIn; }
     public void setConsumeOnTurnIn(boolean v) { this.consumeOnTurnIn = v; }
+
+    // -------------------------------------------------------------------------
+    // Stage 5: реальные методы для server-side проверки на turn-in.
+    // BringObjective НЕ обновляет progress через event handlers — проверка только
+    // в момент попытки сдать квест (через mobInteract / RequestQuestTurnInPacket).
+    // -------------------------------------------------------------------------
+
+    /** Сколько штук подходящего предмета у игрока в инвентаре (включая hotbar/offhand). */
+    public int checkInventoryCount(Player player) {
+        if (player == null || stack.isEmpty()) return 0;
+        int total = 0;
+        // .items покрывает 36 main slots (hotbar+inventory). Дополнительно — offhand.
+        for (ItemStack inv : player.getInventory().items) {
+            if (ItemStack.isSameItemSameTags(inv, stack)) total += inv.getCount();
+        }
+        for (ItemStack inv : player.getInventory().offhand) {
+            if (ItemStack.isSameItemSameTags(inv, stack)) total += inv.getCount();
+        }
+        return total;
+    }
+
+    public boolean canFulfill(Player player) {
+        return checkInventoryCount(player) >= count;
+    }
+
+    /**
+     * Списать из инвентаря {@link #count} штук подходящего предмета. Никакого эффекта
+     * если {@link #consumeOnTurnIn}=false или инвентарь не содержит достаточно.
+     * Вызывающий должен ПРЕДВАРИТЕЛЬНО проверить {@link #canFulfill(Player)}.
+     */
+    public void consumeFromInventory(Player player) {
+        if (player == null || !consumeOnTurnIn || stack.isEmpty()) return;
+        int remaining = count;
+        for (ItemStack inv : player.getInventory().items) {
+            if (remaining <= 0) break;
+            if (ItemStack.isSameItemSameTags(inv, stack)) {
+                int take = Math.min(remaining, inv.getCount());
+                inv.shrink(take);
+                remaining -= take;
+            }
+        }
+        for (ItemStack inv : player.getInventory().offhand) {
+            if (remaining <= 0) break;
+            if (ItemStack.isSameItemSameTags(inv, stack)) {
+                int take = Math.min(remaining, inv.getCount());
+                inv.shrink(take);
+                remaining -= take;
+            }
+        }
+    }
 
     @Override
     protected void writeData(CompoundTag tag) {

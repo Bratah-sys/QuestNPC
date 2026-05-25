@@ -10,7 +10,7 @@ import net.minecraftforge.network.simple.SimpleChannel;
  */
 public final class ModNetwork {
 
-    private static final String PROTOCOL_VERSION = "9";
+    private static final String PROTOCOL_VERSION = "10";
 
     public static final SimpleChannel INSTANCE = NetworkRegistry.newSimpleChannel(
             new ResourceLocation(QuestNPC.MOD_ID, "main"),
@@ -156,6 +156,49 @@ public final class ModNetwork {
                 OpenNPCTradePacket::encode,
                 OpenNPCTradePacket::decode,
                 OpenNPCTradePacket::handle
+        );
+        // Stage 5 (v2.9.4): 6 player-side quest пакетов (ID 19-24).
+        INSTANCE.registerMessage(
+                19,
+                OpenNPCQuestsPacket.class,
+                OpenNPCQuestsPacket::encode,
+                OpenNPCQuestsPacket::decode,
+                OpenNPCQuestsPacket::handle
+        );
+        INSTANCE.registerMessage(
+                20,
+                OpenPlayerQuestListPacket.class,
+                OpenPlayerQuestListPacket::encode,
+                OpenPlayerQuestListPacket::decode,
+                OpenPlayerQuestListPacket::handle
+        );
+        INSTANCE.registerMessage(
+                21,
+                RequestQuestAcceptPacket.class,
+                RequestQuestAcceptPacket::encode,
+                RequestQuestAcceptPacket::decode,
+                RequestQuestAcceptPacket::handle
+        );
+        INSTANCE.registerMessage(
+                22,
+                RequestQuestTurnInPacket.class,
+                RequestQuestTurnInPacket::encode,
+                RequestQuestTurnInPacket::decode,
+                RequestQuestTurnInPacket::handle
+        );
+        INSTANCE.registerMessage(
+                23,
+                RequestQuestAbandonPacket.class,
+                RequestQuestAbandonPacket::encode,
+                RequestQuestAbandonPacket::decode,
+                RequestQuestAbandonPacket::handle
+        );
+        INSTANCE.registerMessage(
+                24,
+                SyncPlayerQuestProgressPacket.class,
+                SyncPlayerQuestProgressPacket::encode,
+                SyncPlayerQuestProgressPacket::decode,
+                SyncPlayerQuestProgressPacket::handle
         );
     }
 

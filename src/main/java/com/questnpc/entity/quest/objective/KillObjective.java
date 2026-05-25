@@ -10,6 +10,7 @@ import net.minecraft.tags.TagKey;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.item.ItemStack;
+import net.minecraftforge.registries.ForgeRegistries;
 
 import javax.annotation.Nullable;
 
@@ -51,10 +52,19 @@ public class KillObjective extends QuestObjective {
     public ItemStack getLootDrop() { return lootDrop; }
     public void setLootDrop(ItemStack v) { this.lootDrop = v != null ? v : ItemStack.EMPTY; }
 
-    /** Этап 5 stub: всегда {@code false}. */
+    /**
+     * Проверяет, соответствует ли убитая сущность типу/тегу из этого objective.
+     * Stage 5 (v2.9.4): real implementation.
+     */
     public boolean matches(Entity killed) {
-        // TODO Stage 5: реальная проверка через type id / tag
-        return false;
+        if (killed == null) return false;
+        if (tagMode) {
+            if (entityTypeTag == null) return false;
+            return killed.getType().is(entityTypeTag);
+        }
+        if (entityType == null) return false;
+        ResourceLocation killedId = ForgeRegistries.ENTITY_TYPES.getKey(killed.getType());
+        return entityType.equals(killedId);
     }
 
     @Override

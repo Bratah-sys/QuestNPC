@@ -8,6 +8,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.tags.TagKey;
 import net.minecraft.world.level.block.Block;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraftforge.registries.ForgeRegistries;
 
 import javax.annotation.Nullable;
 
@@ -43,10 +44,20 @@ public class BreakBlockObjective extends QuestObjective {
     public boolean isDropRequired() { return dropRequired; }
     public void setDropRequired(boolean v) { this.dropRequired = v; }
 
-    /** Этап 5 stub: всегда {@code false}. */
+    /**
+     * Проверяет, соответствует ли сломанный блок типу/тегу из этого objective.
+     * {@code dropRequired} в MVP игнорируется (см. research §3.8 п.3) — любой break засчитывается.
+     * Stage 5 (v2.9.4): real implementation.
+     */
     public boolean matches(BlockState state) {
-        // TODO Stage 5: реальная проверка через block id / tag
-        return false;
+        if (state == null) return false;
+        if (tagMode) {
+            if (blockTag == null) return false;
+            return state.is(blockTag);
+        }
+        if (blockId == null) return false;
+        ResourceLocation brokenId = ForgeRegistries.BLOCKS.getKey(state.getBlock());
+        return blockId.equals(brokenId);
     }
 
     @Override

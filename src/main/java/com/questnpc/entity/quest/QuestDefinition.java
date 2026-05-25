@@ -1,12 +1,16 @@
 package com.questnpc.entity.quest;
 
 import com.questnpc.QuestNPCLogger;
+import com.questnpc.capability.PlayerQuestProgress;
+import com.questnpc.capability.QuestKey;
 import com.questnpc.entity.QuestNPCEntity;
+import com.questnpc.entity.quest.objective.BringObjective;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.player.Player;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
@@ -115,6 +119,38 @@ public final class QuestDefinition {
             boolean met = c.isMet(player, npcPos, npc);
             if (c.isInverted()) met = !met;
             if (!met) return false;
+        }
+        return true;
+    }
+
+    /**
+     * Stage 5 (v2.9.4): проверка завершённости всех non-optional progress-objectives.
+     * BringObjective проверяется ОТДЕЛЬНО через {@link #isReadyToTurnIn} (его прогресс
+     * не отслеживается через {@link PlayerQuestProgress} — только инвентарь на turn-in).
+     */
+    public boolean isObjectivesComplete(PlayerQuestProgress prog, QuestKey key) {
+        if (prog == null || key == null) return false;
+        for (QuestObjective obj : objectives) {
+            if (obj.isOptional()) continue;
+            if (obj instanceof BringObjective) continue; // проверка инвентаря в isReadyToTurnIn
+            long p = prog.getProgress(key, obj.getId());
+            if (p < obj.getMaxProgress()) return false;
+        }
+        return true;
+    }
+
+    /**
+     * Stage 5 (v2.9.4): полная проверка готовности квеста к сдаче — включая
+     * BringObjective (требует игрока для проверки инвентаря).
+     */
+    public boolean isReadyToTurnIn(PlayerQuestProgress prog, QuestKey key, Player player) {
+        if (!isObjectivesComplete(prog, key)) return false;
+        if (player == null) return false;
+        for (QuestObjective obj : objectives) {
+            if (obj.isOptional()) continue;
+            if (obj instanceof BringObjective bo) {
+                if (!bo.canFulfill(player)) return false;
+            }
         }
         return true;
     }
