@@ -869,60 +869,86 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity, Merchant
     public InteractionResult mobInteract(Player player, InteractionHand hand) {
         if (hand != InteractionHand.MAIN_HAND) return InteractionResult.PASS;
 
-        // Проверка на палку (админку)
+        // Проверка на палку (админку) — оставляем PASS, чтобы админ-панель открывалась как раньше
         if (player.getItemInHand(hand).is(net.minecraft.world.item.Items.STICK)) {
             return InteractionResult.PASS;
         }
 
-        if (this.getTradingEnabled()) {
-            if (!this.level().isClientSide) {
-
-                // ================================================================
-                // ПРОВЕРКА РАСПИСАНИЯ (Решение Проблемы 4)
-                // ================================================================
-                if (this.isScheduleEnabled()) {
-                    com.questnpc.entity.schedule.ScheduleEntry active = this.getActiveScheduleEntry();
-
-                    // Проверяем: есть ли активный слот И разрешена ли в нём торговля?
-                    // Торговля разрешена, если тип слота TRADE, ЛИБО тип ACTIVITY и включен флаг interactTrade
-                    boolean canTradeNow = active != null && (
-                            active.type == com.questnpc.entity.schedule.ScheduleEntry.Type.TRADE ||
-                                    (active.type == com.questnpc.entity.schedule.ScheduleEntry.Type.ACTIVITY && active.interactTrade)
-                    );
-
-                    if (!canTradeNow) {
-                        // Если по расписанию сейчас торговать нельзя — просто выходим.
-                        // Опционально: можно раскомментировать строчку ниже, чтобы писать игроку в чат
-                        // player.displayClientMessage(net.minecraft.network.chat.Component.literal("§cТорговец сейчас занят!"), true);
-                        return InteractionResult.sidedSuccess(this.level().isClientSide);
-                    }
-                }
-
-                // MED-006: NPC уже торгует с другим игроком — не открывать второй экран.
-                if (this.getTradingPlayer() != null && this.getTradingPlayer() != player) {
-                    return InteractionResult.sidedSuccess(this.level().isClientSide);
-                }
-
-                // ================================================================
-                // СБРОС КЭША (Решение Проблем 2 и 3)
-                // ================================================================
-                // Обнуляем старый список сделок. Метод openTradingScreen ниже сразу же
-                // вызовет getOffers(), который из-за null пересоберет актуальные данные
-                // и лимиты прямо из NBT!
-                this.tradeOffers = null;
-
-                // 1. Запоминаем игрока
-                this.setTradingPlayer(player);
-
-                // 2. Вызываем ванильный метод открытия интерфейса
-                this.openTradingScreen(player, this.getDisplayName(), 1);
-
-                QuestNPCLogger.debug("Торговля открыта через openTradingScreen для {}", player.getName().getString());
-            }
-            return InteractionResult.sidedSuccess(this.level().isClientSide);
+        // ОТКРЫТИЕ МЕНЮ ДЛЯ ИГРОКА
+        // На КЛИЕНТЕ мы открываем наш новый экран-выбор (Хаб)
+        if (this.level().isClientSide) {
+            net.minecraft.client.Minecraft.getInstance().setScreen(
+                    new com.questnpc.client.gui.NPCInteractionScreen(this)
+            );
+            return InteractionResult.SUCCESS;
         }
 
-        return super.mobInteract(player, hand);
+        // На СЕРВЕРЕ мы запускаем твою старую логику (проверка расписания, сброс кэша, блокировка NPC),
+        // но НЕ вызываем openTradingScreen здесь! Мы вызовем его, когда игрок нажмет на кнопку.
+        if (this.getTradingEnabled()) {
+            // Проверка расписания
+            if (this.isScheduleEnabled()) {
+                com.questnpc.entity.schedule.ScheduleEntry active = this.getActiveScheduleEntry();
+                boolean canTradeNow = active != null && (
+                        active.type == com.questnpc.entity.schedule.ScheduleEntry.Type.TRADE ||
+                                (active.type == com.questnpc.entity.schedule.ScheduleEntry.Type.ACTIVITY && active.interactTrade)
+                );
+                if (!canTradeNow) return InteractionResult.sidedSuccess(this.level().isClientSide);
+            }
+
+            // NPC занят другим игроком
+            if (this.getTradingPlayer() != null && this.getTradingPlayer() != player) {
+                return InteractionResult.sidedSuccess(this.level().isClientSide);
+            }
+
+            // Подготавливаем данные на сервере (запоминаем игрока, чистим кэш), чтобы они были готовы
+            this.tradeOffers = null;
+            this.setTradingPlayer(player);
+        }
+
+        return InteractionResult.sidedSuccess(this.level().isClientSide);
+    }
+
+    /**
+     * Этот метод теперь запускает ТОЛЬКО финальное открытие окна торгов на сервере.
+     * Мы вызовем его из экрана игрока.
+     */
+    public void startServerTrading(Player player) {
+        if (this.level().isClientSide) return;
+
+        if (this.getTradingEnabled()) {
+            // Проверка расписания
+            if (this.isScheduleEnabled()) {
+                com.questnpc.entity.schedule.ScheduleEntry active = this.getActiveScheduleEntry();
+                boolean canTradeNow = active != null && (
+                        active.type == com.questnpc.entity.schedule.ScheduleEntry.Type.TRADE ||
+                                (active.type == com.questnpc.entity.schedule.ScheduleEntry.Type.ACTIVITY && active.interactTrade)
+                );
+                if (!canTradeNow) {
+                    player.displayClientMessage(net.minecraft.network.chat.Component.literal("§cТорговец сейчас занят!"), true);
+                    return;
+                }
+            }
+
+            // NPC занят другим игроком
+            if (this.getTradingPlayer() != null && this.getTradingPlayer() != player) {
+                player.displayClientMessage(net.minecraft.network.chat.Component.literal("§cТорговец уже занят другим игроком!"), true);
+                return;
+            }
+
+            // Обнуляем старый список сделок для пересборки из NBT
+            this.tradeOffers = null;
+
+            // 1. Запоминаем игрока
+            this.setTradingPlayer(player);
+
+            // 2. Вызываем ванильный метод открытия интерфейса.
+            // ВАЖНО: он сам пошлет пакет на клиент для закрытия текущего экрана (нашего Хаба)
+            // и открытия окна торговли.
+            this.openTradingScreen(player, this.getDisplayName(), 1);
+
+            QuestNPCLogger.debug("Торговля успешно открыта через Хаб для {}", player.getName().getString());
+        }
     }
 
     public void restockAllTrades() {
