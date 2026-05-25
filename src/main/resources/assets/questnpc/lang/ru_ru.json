@@ -227,5 +227,28 @@
   "gui.questnpc.quests.prerequisites.min_distance": "Мин. дистанция (блоков)",
   "gui.questnpc.quests.prerequisites.structure": "Структура",
   "gui.questnpc.quests.prerequisites.structure.not_selected": "Не выбрана",
-  "gui.questnpc.quests.prerequisites.future_type_tooltip": "Доступно в будущих итерациях"
+  "gui.questnpc.quests.prerequisites.future_type_tooltip": "Доступно в будущих итерациях",
+
+  "gui.questnpc.player_quest.title": "Квесты NPC: %s",
+  "gui.questnpc.player_quest.tab.offerable": "Доступные (%d)",
+  "gui.questnpc.player_quest.tab.active": "Активные (%d)",
+  "gui.questnpc.player_quest.tab.turn_in": "Сдать (%d)",
+  "gui.questnpc.player_quest.accept": "✓ Принять",
+  "gui.questnpc.player_quest.abandon": "✕ Отказаться",
+  "gui.questnpc.player_quest.abandon.confirm": "Точно?",
+  "gui.questnpc.player_quest.turn_in": "✓ Сдать",
+  "gui.questnpc.player_quest.back": "← Назад",
+  "gui.questnpc.player_quest.no_offerable": "Нет доступных квестов",
+  "gui.questnpc.player_quest.no_active": "Нет активных квестов",
+  "gui.questnpc.player_quest.no_turn_in": "Нет выполненных квестов",
+  "gui.questnpc.player_quest.objectives_label": "Цели:",
+  "gui.questnpc.player_quest.rewards_label": "Награды:",
+
+  "chat.questnpc.accepted": "Квест «%s» принят",
+  "chat.questnpc.objective_complete": "[%s] %s ✓",
+  "chat.questnpc.ready": "Квест «%s» готов к сдаче",
+  "chat.questnpc.completed": "Квест «%s» выполнен!",
+  "chat.questnpc.reward": "Награда: %s",
+  "chat.questnpc.abandoned": "Квест «%s» отменён",
+  "chat.questnpc.bring_failed": "У тебя нет нужных предметов"
 }

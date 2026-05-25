@@ -227,5 +227,28 @@
   "gui.questnpc.quests.prerequisites.min_distance": "Min distance (blocks)",
   "gui.questnpc.quests.prerequisites.structure": "Structure",
   "gui.questnpc.quests.prerequisites.structure.not_selected": "Not selected",
-  "gui.questnpc.quests.prerequisites.future_type_tooltip": "Available in future iterations"
+  "gui.questnpc.quests.prerequisites.future_type_tooltip": "Available in future iterations",
+
+  "gui.questnpc.player_quest.title": "Quests of %s",
+  "gui.questnpc.player_quest.tab.offerable": "Available (%d)",
+  "gui.questnpc.player_quest.tab.active": "Active (%d)",
+  "gui.questnpc.player_quest.tab.turn_in": "Turn in (%d)",
+  "gui.questnpc.player_quest.accept": "✓ Accept",
+  "gui.questnpc.player_quest.abandon": "✕ Abandon",
+  "gui.questnpc.player_quest.abandon.confirm": "Confirm?",
+  "gui.questnpc.player_quest.turn_in": "✓ Turn in",
+  "gui.questnpc.player_quest.back": "← Back",
+  "gui.questnpc.player_quest.no_offerable": "No available quests",
+  "gui.questnpc.player_quest.no_active": "No active quests",
+  "gui.questnpc.player_quest.no_turn_in": "No completed quests",
+  "gui.questnpc.player_quest.objectives_label": "Objectives:",
+  "gui.questnpc.player_quest.rewards_label": "Rewards:",
+
+  "chat.questnpc.accepted": "Quest \"%s\" accepted",
+  "chat.questnpc.objective_complete": "[%s] %s ✓",
+  "chat.questnpc.ready": "Quest \"%s\" ready to turn in",
+  "chat.questnpc.completed": "Quest \"%s\" completed!",
+  "chat.questnpc.reward": "Reward: %s",
+  "chat.questnpc.abandoned": "Quest \"%s\" abandoned",
+  "chat.questnpc.bring_failed": "You don't have required items"
 }

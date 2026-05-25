@@ -2,6 +2,7 @@ package com.questnpc.client.gui;
 
 import com.questnpc.entity.QuestNPCEntity;
 import com.questnpc.network.ModNetwork;
+import com.questnpc.network.OpenNPCQuestsPacket;
 import com.questnpc.network.OpenNPCTradePacket;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
@@ -45,12 +46,12 @@ public class NPCInteractionScreen extends Screen {
         this.addRenderableWidget(tradeButton);
 
         // ==========================================
-        // 2. КНОПКА КВЕСТОВ
+        // 2. КНОПКА КВЕСТОВ (Stage 5 v2.9.4)
         // ==========================================
+        // НЕ onClose — сервер пришлёт OpenPlayerQuestListPacket который сам откроет PlayerQuestScreen.
         Button questsButton = Button.builder(Component.literal("Квесты"), button -> {
             if (this.minecraft.player != null) {
-                this.minecraft.player.sendSystemMessage(Component.literal("§6[Квесты] §fПанель квестов в разработке..."));
-                this.onClose(); // Здесь оставляем закрытие меню, так как мы просто пишем в чат
+                ModNetwork.INSTANCE.sendToServer(new OpenNPCQuestsPacket(npc.getId()));
             }
         }).bounds(startX, startY + spacing, buttonWidth, buttonHeight).build();
         this.addRenderableWidget(questsButton);
