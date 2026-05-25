@@ -131,6 +131,16 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity, Merchant
     private boolean questsEnabled = false;
     private final List<com.questnpc.entity.quest.QuestDefinition> quests = new ArrayList<>();
 
+    // --- Per-NPC cache для DistanceToStructureCondition (v2.9.3, runtime-only) ---
+    /** TTL кэша ближайшей структуры — 60 секунд (1200 тиков), research §3.7. */
+    private static final long STRUCTURE_CACHE_TTL_TICKS = 1200L;
+    /** {@code structureId → (BlockPos|null, gameTime)}. Не сохраняется в NBT. */
+    private final java.util.Map<net.minecraft.resources.ResourceLocation, CachedStructureInfo>
+            nearestStructureCache = new java.util.HashMap<>();
+
+    /** Snapshot ближайшей структуры по типу. {@code pos} = null означает «не найдено в радиусе поиска». */
+    private record CachedStructureInfo(@Nullable net.minecraft.core.BlockPos pos, long timestamp) {}
+
     public boolean isQuestsEnabled() { return questsEnabled; }
     public void setQuestsEnabled(boolean v) { this.questsEnabled = v; }
 
@@ -163,6 +173,38 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity, Merchant
             if (src == null || quests.size() >= MAX_QUESTS) continue;
             quests.add(com.questnpc.entity.quest.QuestDefinition.load(src.save()));
         }
+    }
+
+    /**
+     * Возвращает позицию ближайшей структуры данного типа от позиции NPC. Cache-aware:
+     * результат держится {@link #STRUCTURE_CACHE_TTL_TICKS} тиков, потом перезапрашивается.
+     * {@code null} результат — структура не найдена в радиусе поиска (тоже кэшируется).
+     *
+     * <p>Кэш runtime-only — пуст после перезагрузки мира, регенерируется при первом запросе.
+     * Используется в {@link com.questnpc.entity.quest.condition.DistanceToStructureCondition#isMet}.
+     */
+    public @Nullable net.minecraft.core.BlockPos getNearestStructureCached(
+            net.minecraft.resources.ResourceLocation structureId,
+            ServerLevel lvl) {
+        long now = lvl.getGameTime();
+        CachedStructureInfo cached = nearestStructureCache.get(structureId);
+        if (cached != null && (now - cached.timestamp) < STRUCTURE_CACHE_TTL_TICKS) {
+            return cached.pos; // может быть null — это валидное «не найдено»
+        }
+
+        // Cache miss — дорогой запрос
+        net.minecraft.core.Registry<net.minecraft.world.level.levelgen.structure.Structure> registry =
+                lvl.registryAccess().registryOrThrow(net.minecraft.core.registries.Registries.STRUCTURE);
+        net.minecraft.world.level.levelgen.structure.Structure structure = registry.get(structureId);
+        net.minecraft.core.BlockPos pos;
+        if (structure == null) {
+            pos = null;
+        } else {
+            pos = com.questnpc.entity.quest.condition.DistanceToStructureCondition
+                    .findNearestStructureDirect(lvl, registry, structure, this.blockPosition());
+        }
+        nearestStructureCache.put(structureId, new CachedStructureInfo(pos, now));
+        return pos;
     }
 
     public ItemStack getQuestNPCEquipment(int slot) {

@@ -1,12 +1,14 @@
 package com.questnpc.entity.quest;
 
 import com.questnpc.QuestNPCLogger;
+import com.questnpc.entity.QuestNPCEntity;
 import net.minecraft.core.BlockPos;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.ListTag;
 import net.minecraft.nbt.Tag;
 import net.minecraft.server.level.ServerPlayer;
 
+import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -95,12 +97,26 @@ public final class QuestDefinition {
     public void clearPrerequisites() { prerequisites.clear(); }
 
     /**
-     * Этап 1 stub: возвращает {@link #enabled}, не проверяет prerequisites.
-     * Реальная проверка conditions — этап 4.
+     * Проверяет, может ли квест быть предложен игроку. Returns false если:
+     * <ul>
+     *   <li>{@link #enabled} == false (глобально выключен)</li>
+     *   <li>хотя бы одно prerequisite не выполнено (с учётом {@code inverted})</li>
+     * </ul>
+     *
+     * <p>v2.9.3: реальная итерация по prerequisites. {@code npc} прокидывается в
+     * {@link QuestCondition#isMet} для cache-aware проверок (DistanceToStructure).
+     * Может быть null — реализации conditions должны корректно работать без NPC.
+     *
+     * <p>Вызов из {@code mobInteract} планируется в Stage 5 (player-side quest-offer).
      */
-    public boolean canOfferTo(ServerPlayer player, BlockPos npcPos) {
-        // TODO Stage 4: iterate prerequisites, apply inverted-logic, return AND of all
-        return enabled;
+    public boolean canOfferTo(ServerPlayer player, BlockPos npcPos, @Nullable QuestNPCEntity npc) {
+        if (!enabled) return false;
+        for (QuestCondition c : prerequisites) {
+            boolean met = c.isMet(player, npcPos, npc);
+            if (c.isInverted()) met = !met;
+            if (!met) return false;
+        }
+        return true;
     }
 
     public CompoundTag save() {
