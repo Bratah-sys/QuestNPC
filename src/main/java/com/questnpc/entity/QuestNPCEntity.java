@@ -125,6 +125,46 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity, Merchant
             ItemStack.EMPTY, ItemStack.EMPTY, ItemStack.EMPTY, ItemStack.EMPTY
     };
 
+    // --- Квесты (v2.9.0, foundation) — research §3.4 NBT-схема ---
+    /** Лимит квестов на одного NPC — согласован 2026-05-25 (research §0.5 п.4). */
+    public static final int MAX_QUESTS = 20;
+    private boolean questsEnabled = false;
+    private final List<com.questnpc.entity.quest.QuestDefinition> quests = new ArrayList<>();
+
+    public boolean isQuestsEnabled() { return questsEnabled; }
+    public void setQuestsEnabled(boolean v) { this.questsEnabled = v; }
+
+    public List<com.questnpc.entity.quest.QuestDefinition> getQuests() {
+        return Collections.unmodifiableList(quests);
+    }
+
+    /** @return true если добавили; false если уже {@link #MAX_QUESTS} квестов на NPC. */
+    public boolean addQuest(com.questnpc.entity.quest.QuestDefinition q) {
+        if (q == null || quests.size() >= MAX_QUESTS) return false;
+        quests.add(q);
+        return true;
+    }
+
+    public void removeQuest(int index) {
+        if (index >= 0 && index < quests.size()) quests.remove(index);
+    }
+
+    public void clearQuests() { quests.clear(); }
+
+    /**
+     * Полная замена списка квестов (для будущего {@code UpdateNPCQuestsPacket} этапа 2).
+     * В этапе 1 не вызывается, но метод существует для готовности сетевой интеграции.
+     * Делает deep-copy через NBT save/load, чтобы snapshot не разделял ссылки с UI.
+     */
+    public void setQuestsFromSnapshot(List<com.questnpc.entity.quest.QuestDefinition> snapshot) {
+        quests.clear();
+        if (snapshot == null) return;
+        for (com.questnpc.entity.quest.QuestDefinition src : snapshot) {
+            if (src == null || quests.size() >= MAX_QUESTS) continue;
+            quests.add(com.questnpc.entity.quest.QuestDefinition.load(src.save()));
+        }
+    }
+
     public ItemStack getQuestNPCEquipment(int slot) {
         return (slot >= 0 && slot < EQUIPMENT_SLOTS) ? equipment[slot] : ItemStack.EMPTY;
     }
@@ -984,6 +1024,16 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity, Merchant
             }
             tag.put("Equipment", eq);
         }
+
+        // Квесты (v2.9.0 foundation) — research §3.4.
+        tag.putBoolean("QuestsEnabled", questsEnabled);
+        if (!quests.isEmpty()) {
+            ListTag questsList = new ListTag();
+            for (com.questnpc.entity.quest.QuestDefinition q : quests) {
+                questsList.add(q.save());
+            }
+            tag.put("Quests", questsList);
+        }
     }
 
     @Override
@@ -1086,5 +1136,24 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity, Merchant
             }
         }
         applyEquipmentArmor();
+
+        // Квесты (v2.9.0 foundation) — research §3.4.
+        if (tag.contains("QuestsEnabled")) {
+            this.questsEnabled = tag.getBoolean("QuestsEnabled");
+        }
+        quests.clear();
+        if (tag.contains("Quests", Tag.TAG_LIST)) {
+            ListTag list = tag.getList("Quests", Tag.TAG_COMPOUND);
+            for (int i = 0; i < list.size() && i < MAX_QUESTS; i++) {
+                try {
+                    com.questnpc.entity.quest.QuestDefinition q =
+                            com.questnpc.entity.quest.QuestDefinition.load(list.getCompound(i));
+                    if (q != null) quests.add(q);
+                } catch (Exception ex) {
+                    QuestNPCLogger.warn("NPC {}: failed to load quest at index {}: {}",
+                            this.getId(), i, ex.getMessage());
+                }
+            }
+        }
     }
 }

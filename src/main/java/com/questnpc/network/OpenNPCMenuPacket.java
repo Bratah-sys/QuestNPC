@@ -2,6 +2,7 @@ package com.questnpc.network;
 
 import com.questnpc.client.gui.NPCMenuScreen;
 import com.questnpc.entity.QuestNPCEntity;
+import com.questnpc.entity.quest.QuestDefinition;
 import net.minecraft.client.Minecraft;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.network.FriendlyByteBuf;
@@ -15,7 +16,11 @@ import java.util.function.Supplier;
 
 /**
  * S2C-пакет: открывает меню NPC на клиенте.
- * Содержит текущие настройки NPC для отображения в GUI, включая наборы сделок и расписание.
+ * Содержит текущие настройки NPC для отображения в GUI, включая наборы сделок, расписание и квесты.
+ *
+ * <p>v2.9.1: добавлена секция Quests (questsEnabled + List&lt;QuestDefinition&gt;) в конце payload
+ * по аналогии с Equipment-секцией v2.8.0. Сериализация делегирована
+ * {@link UpdateNPCQuestsPacket#writeQuests} / {@link UpdateNPCQuestsPacket#readQuests}.
  */
 public class OpenNPCMenuPacket {
 
@@ -29,11 +34,14 @@ public class OpenNPCMenuPacket {
     private final boolean scheduleEnabled;
     private final List<CompoundTag> schedule;
     private final ItemStack[] equipment; // v2.8.0: снимок экипировки длиной EQUIPMENT_SLOTS
+    private final boolean questsEnabled; // v2.9.1
+    private final List<QuestDefinition> quests; // v2.9.1
 
     public OpenNPCMenuPacket(int entityId, double speed, int delayMin, int delayMax, String modelType,
                              boolean tradingEnabled, List<QuestNPCEntity.TradeSet> tradeSets,
                              boolean scheduleEnabled, List<CompoundTag> schedule,
-                             ItemStack[] equipment) {
+                             ItemStack[] equipment,
+                             boolean questsEnabled, List<QuestDefinition> quests) {
         this.entityId = entityId;
         this.speed = speed;
         this.delayMin = delayMin;
@@ -46,6 +54,8 @@ public class OpenNPCMenuPacket {
         this.equipment = (equipment != null && equipment.length == QuestNPCEntity.EQUIPMENT_SLOTS)
                 ? equipment
                 : new ItemStack[]{ ItemStack.EMPTY, ItemStack.EMPTY, ItemStack.EMPTY, ItemStack.EMPTY };
+        this.questsEnabled = questsEnabled;
+        this.quests = quests != null ? quests : new ArrayList<>();
     }
 
     public static void encode(OpenNPCMenuPacket packet, FriendlyByteBuf buf) {
@@ -66,6 +76,9 @@ public class OpenNPCMenuPacket {
         for (int i = 0; i < QuestNPCEntity.EQUIPMENT_SLOTS; i++) {
             buf.writeItem(packet.equipment[i]);
         }
+        // v2.9.1: квесты (questsEnabled + список QuestDefinition)
+        buf.writeBoolean(packet.questsEnabled);
+        UpdateNPCQuestsPacket.writeQuests(buf, packet.quests);
     }
 
     public static OpenNPCMenuPacket decode(FriendlyByteBuf buf) {
@@ -87,8 +100,10 @@ public class OpenNPCMenuPacket {
         for (int i = 0; i < QuestNPCEntity.EQUIPMENT_SLOTS; i++) {
             equipment[i] = buf.readItem();
         }
+        boolean questsEnabled = buf.readBoolean();
+        List<QuestDefinition> quests = UpdateNPCQuestsPacket.readQuests(buf);
         return new OpenNPCMenuPacket(entityId, speed, delayMin, delayMax, model, trading, sets,
-                scheduleEnabled, schedule, equipment);
+                scheduleEnabled, schedule, equipment, questsEnabled, quests);
     }
 
     public static void handle(OpenNPCMenuPacket packet, Supplier<NetworkEvent.Context> ctx) {
@@ -99,7 +114,8 @@ public class OpenNPCMenuPacket {
             if (entity instanceof QuestNPCEntity npc) {
                 mc.setScreen(new NPCMenuScreen(npc, packet.speed, packet.delayMin, packet.delayMax,
                         packet.modelType, packet.tradingEnabled, packet.tradeSets,
-                        packet.scheduleEnabled, packet.schedule, packet.equipment));
+                        packet.scheduleEnabled, packet.schedule, packet.equipment,
+                        packet.questsEnabled, packet.quests));
             }
         });
         ctx.get().setPacketHandled(true);

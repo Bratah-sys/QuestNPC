@@ -43,7 +43,7 @@ import net.minecraft.network.chat.Component;
 public class QuestNPC {
 
     public static final String MOD_ID = "questnpc";
-    public static final String MOD_VERSION = "0.3.1-alpha-menurefactor-v2.8.2";
+    public static final String MOD_VERSION = "0.3.1-alpha-menurefactor-v2.9.1-quest-editor-mvp";
 
     public QuestNPC() {
         QuestNPCLogger.info("Инициализация мода QuestNPC v{}", MOD_VERSION);

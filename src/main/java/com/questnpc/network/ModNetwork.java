@@ -10,7 +10,7 @@ import net.minecraftforge.network.simple.SimpleChannel;
  */
 public final class ModNetwork {
 
-    private static final String PROTOCOL_VERSION = "7";
+    private static final String PROTOCOL_VERSION = "8";
 
     public static final SimpleChannel INSTANCE = NetworkRegistry.newSimpleChannel(
             new ResourceLocation(QuestNPC.MOD_ID, "main"),
@@ -142,6 +142,13 @@ public final class ModNetwork {
                 UpdateEquipmentPacket::encode,
                 UpdateEquipmentPacket::decode,
                 UpdateEquipmentPacket::handle
+        );
+        INSTANCE.registerMessage(
+                17,
+                UpdateNPCQuestsPacket.class,
+                UpdateNPCQuestsPacket::encode,
+                UpdateNPCQuestsPacket::decode,
+                UpdateNPCQuestsPacket::handle
         );
     }
 

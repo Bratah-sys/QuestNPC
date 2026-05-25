@@ -4,6 +4,7 @@ import com.questnpc.QuestNPCLogger;
 import com.questnpc.client.gui.widget.DarkButton;
 import com.questnpc.entity.ModEntityTypes;
 import com.questnpc.entity.QuestNPCEntity;
+import com.questnpc.entity.quest.QuestDefinition;
 import com.questnpc.network.ChangeModelPacket;
 import com.questnpc.network.CloseMenuPacket;
 import com.questnpc.network.DeleteNPCPacket;
@@ -70,6 +71,8 @@ public class NPCMenuScreen extends Screen {
     private boolean currentScheduleEnabled;
     private List<CompoundTag> currentSchedule;
     private net.minecraft.world.item.ItemStack[] currentEquipment; // v2.8.0 снимок брони с сервера
+    private boolean currentQuestsEnabled;                          // v2.9.1 снимок toggle квестов
+    private List<QuestDefinition> currentQuests;                   // v2.9.1 снимок списка квестов
 
     // ═══ Виджеты ═══
     private EditBox nameField;
@@ -91,7 +94,8 @@ public class NPCMenuScreen extends Screen {
     public NPCMenuScreen(QuestNPCEntity npc, double speed, int delayMin, int delayMax, String modelType,
                          boolean tradingEnabled, List<QuestNPCEntity.TradeSet> tradeSets,
                          boolean scheduleEnabled, List<CompoundTag> schedule,
-                         net.minecraft.world.item.ItemStack[] equipment) {
+                         net.minecraft.world.item.ItemStack[] equipment,
+                         boolean questsEnabled, List<QuestDefinition> quests) {
         super(Component.translatable("gui.questnpc.menu.title"));
         this.npc = npc;
         this.currentSpeed = speed;
@@ -111,6 +115,14 @@ public class NPCMenuScreen extends Screen {
                     net.minecraft.world.item.ItemStack.EMPTY,
                     net.minecraft.world.item.ItemStack.EMPTY
             };
+        }
+        // v2.9.1: snapshot квестов с deep-copy через NBT round-trip
+        this.currentQuestsEnabled = questsEnabled;
+        this.currentQuests = new ArrayList<>();
+        if (quests != null) {
+            for (QuestDefinition q : quests) {
+                if (q != null) this.currentQuests.add(QuestDefinition.load(q.save()));
+            }
         }
     }
 
@@ -181,7 +193,7 @@ public class NPCMenuScreen extends Screen {
         String[][] gridButtons = {
             {"gui.questnpc.menu.btn.actions",   "gui.questnpc.menu.btn.attributes"},
             {"gui.questnpc.menu.btn.dialog",    "gui.questnpc.menu.btn.equipment"},
-            {"gui.questnpc.menu.btn.goals",     "gui.questnpc.menu.btn.pose"},
+            {"gui.questnpc.menu.btn.quests",    "gui.questnpc.menu.btn.pose"},
             {"gui.questnpc.menu.btn.position",  "gui.questnpc.menu.btn.trading"},
         };
 
@@ -222,6 +234,12 @@ public class NPCMenuScreen extends Screen {
                         navigatingToSubScreen = true;
                         Minecraft.getInstance().setScreen(
                                 new EquipmentScreen(npc, currentEquipment, this));
+                    };
+                } else if (key.equals("gui.questnpc.menu.btn.quests")) {
+                    action = button -> {
+                        navigatingToSubScreen = true;
+                        Minecraft.getInstance().setScreen(new QuestsScreen(
+                                npc, this, currentQuestsEnabled, currentQuests));
                     };
                 } else {
                     action = button -> {}; // заглушка
@@ -604,6 +622,26 @@ public class NPCMenuScreen extends Screen {
                     ? equipment[i].copy()
                     : net.minecraft.world.item.ItemStack.EMPTY;
         }
+    }
+
+    /**
+     * v2.9.1: обновляет локальный снимок квестов после Apply в {@link QuestsScreen}.
+     * Deep-copy через NBT round-trip ({@code QuestDefinition.load(src.save())}) —
+     * изменения в дочернем экране не утекают через разделённые ссылки.
+     */
+    public void setQuestsSnapshot(boolean enabled, List<QuestDefinition> snapshot) {
+        this.currentQuestsEnabled = enabled;
+        this.currentQuests = new ArrayList<>();
+        if (snapshot == null) return;
+        for (QuestDefinition q : snapshot) {
+            if (q != null) this.currentQuests.add(QuestDefinition.load(q.save()));
+        }
+    }
+
+    /** v2.9.1: для передачи в {@link QuestsScreen} (read-only view). */
+    public boolean isQuestsEnabled() { return currentQuestsEnabled; }
+    public List<QuestDefinition> getCurrentQuests() {
+        return java.util.Collections.unmodifiableList(currentQuests);
     }
 
     // ═══ Закрытие меню — уведомляем сервер для закрытия сессии ═══
