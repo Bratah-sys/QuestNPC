@@ -70,7 +70,8 @@ public class NPCInteractionHandler {
                         npc.getModelEntityType(),
                         npc.getTradingEnabled(), npc.getTradeSets(),
                         npc.isScheduleEnabled(), scheduleTags,
-                        npc.copyEquipmentSnapshot())
+                        npc.copyEquipmentSnapshot(),
+                        npc.isQuestsEnabled(), npc.getQuests())
         );
         event.setCanceled(true);
         event.setCancellationResult(InteractionResult.SUCCESS);
