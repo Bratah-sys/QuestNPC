@@ -217,5 +217,15 @@
   "gui.questnpc.pickers.block_tag.title": "Выбор тега блока",
   "gui.questnpc.pickers.search.placeholder": "Поиск...",
   "gui.questnpc.pickers.empty": "Недоступно в этом мире",
-  "gui.questnpc.pickers.back": "\u2190 Назад"
+  "gui.questnpc.pickers.back": "\u2190 Назад",
+  "gui.questnpc.quests.prerequisites.section": "УСЛОВИЯ ВЫДАЧИ",
+  "gui.questnpc.quests.prerequisites.add": "+ Добавить условие",
+  "gui.questnpc.quests.prerequisites.type.DISTANCE_TO_STRUCTURE": "Дистанция до структуры",
+  "gui.questnpc.quests.prerequisites.type.PLAYER_LEVEL": "Уровень игрока",
+  "gui.questnpc.quests.prerequisites.type.COMPLETED_QUEST": "Завершён квест",
+  "gui.questnpc.quests.prerequisites.invert": "Инвертировать (NOT)",
+  "gui.questnpc.quests.prerequisites.min_distance": "Мин. дистанция (блоков)",
+  "gui.questnpc.quests.prerequisites.structure": "Структура",
+  "gui.questnpc.quests.prerequisites.structure.not_selected": "Не выбрана",
+  "gui.questnpc.quests.prerequisites.future_type_tooltip": "Доступно в будущих итерациях"
 }

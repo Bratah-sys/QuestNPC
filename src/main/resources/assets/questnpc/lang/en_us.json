@@ -217,5 +217,15 @@
   "gui.questnpc.pickers.block_tag.title": "Select Block Tag",
   "gui.questnpc.pickers.search.placeholder": "Search...",
   "gui.questnpc.pickers.empty": "Not available in this world",
-  "gui.questnpc.pickers.back": "← Back"
+  "gui.questnpc.pickers.back": "← Back",
+  "gui.questnpc.quests.prerequisites.section": "PREREQUISITES",
+  "gui.questnpc.quests.prerequisites.add": "+ Add condition",
+  "gui.questnpc.quests.prerequisites.type.DISTANCE_TO_STRUCTURE": "Distance to structure",
+  "gui.questnpc.quests.prerequisites.type.PLAYER_LEVEL": "Player level",
+  "gui.questnpc.quests.prerequisites.type.COMPLETED_QUEST": "Completed quest",
+  "gui.questnpc.quests.prerequisites.invert": "Invert (NOT)",
+  "gui.questnpc.quests.prerequisites.min_distance": "Min distance (blocks)",
+  "gui.questnpc.quests.prerequisites.structure": "Structure",
+  "gui.questnpc.quests.prerequisites.structure.not_selected": "Not selected",
+  "gui.questnpc.quests.prerequisites.future_type_tooltip": "Available in future iterations"
 }

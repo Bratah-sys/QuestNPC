@@ -8,9 +8,12 @@ import com.questnpc.client.gui.picker.EntityTagPickerScreen;
 import com.questnpc.client.gui.picker.StructurePickerScreen;
 import com.questnpc.client.gui.widget.DarkButton;
 import com.questnpc.entity.QuestNPCEntity;
+import com.questnpc.entity.quest.ConditionType;
 import com.questnpc.entity.quest.ObjectiveType;
+import com.questnpc.entity.quest.QuestCondition;
 import com.questnpc.entity.quest.QuestDefinition;
 import com.questnpc.entity.quest.QuestObjective;
+import com.questnpc.entity.quest.condition.DistanceToStructureCondition;
 import com.questnpc.entity.quest.objective.BreakBlockObjective;
 import com.questnpc.entity.quest.objective.BringObjective;
 import com.questnpc.entity.quest.objective.KillObjective;
@@ -77,6 +80,10 @@ public class QuestsScreen extends Screen {
     private static final int OBJ_ROW_H      = 24; // v2.9.2 чуть выше — нужен второй ряд для tag-mode
     private static final int OBJ_VISIBLE    = 3;  // 3 цели влезает с увеличенной высотой строки
 
+    // Prerequisites (v2.9.3) — секция «УСЛОВИЯ ВЫДАЧИ» с collapse-toggle
+    private static final int PREREQ_ROW_H   = 22;
+    private static final int PREREQ_VISIBLE = 3;  // больше требует скролла; документировано в plan
+
     private static final int LIST_SELECTED_BG = 0xFF2DD4BF;
     private static final int LIST_NORMAL_BG   = 0xFF374151;
     private static final int LIST_HOVER_BG    = 0xFF4B5563;
@@ -113,6 +120,11 @@ public class QuestsScreen extends Screen {
     @Nullable private final EditBox[] objCountBoxes = new EditBox[QuestDefinition.MAX_OBJECTIVES];
     /** Геометрия «pick»-плитки каждой видимой objective — для красной подсветки невалидных. */
     @Nullable private final int[][] objPickBounds = new int[QuestDefinition.MAX_OBJECTIVES][4]; // [x,y,w,h]
+
+    // Prerequisites widget cache (v2.9.3)
+    private boolean prerequisitesExpanded = false;
+    @Nullable private final EditBox[] prereqMinDistanceBoxes = new EditBox[QuestDefinition.MAX_PREREQUISITES];
+    @Nullable private final int[][] prereqPickBounds = new int[QuestDefinition.MAX_PREREQUISITES][4];
 
     public QuestsScreen(QuestNPCEntity npc,
                         Screen parentScreen,
@@ -235,9 +247,19 @@ public class QuestsScreen extends Screen {
         int formW = PANEL_WIDTH - LIST_WIDTH - PADDING * 2 - 6;
         int y = formY;
 
+        // ── «Удалить квест» — v2.9.3: переехала в верхний-правый угол формы ──
+        boolean isConfirm = (deleteConfirmIndex == selectedIndex);
+        Component delLabel = Component.translatable(isConfirm
+                ? "gui.questnpc.quests.delete_confirm" : "gui.questnpc.quests.delete");
+        deleteQuestBtn = this.addRenderableWidget(new DarkButton(
+                formX + formW - 70, formY, 70, 14,
+                delLabel, btn -> handleDeleteClick(),
+                0xFF7F1D1D, 0xFFB91C1C, 0xFFFFFFFF
+        ));
+
         // Секция «КВЕСТ»
         y += 18;
-        titleBox = new EditBox(this.font, formX + 4, y, formW - 8, 14,
+        titleBox = new EditBox(this.font, formX + 4, y, formW - 8 - 74, 14,
                 Component.translatable("gui.questnpc.quests.title_field"));
         titleBox.setMaxLength(QuestDefinition.MAX_TITLE_LENGTH);
         titleBox.setValue(q.getTitle());
@@ -259,7 +281,6 @@ public class QuestsScreen extends Screen {
 
         List<QuestObjective> objectives = q.getObjectives();
         int objCount = Math.min(objectives.size(), OBJ_VISIBLE);
-        // Сброс кэша геометрии перед перестройкой
         for (int i = 0; i < QuestDefinition.MAX_OBJECTIVES; i++) {
             objCountBoxes[i] = null;
             objPickBounds[i] = new int[]{-1, -1, 0, 0};
@@ -276,15 +297,146 @@ public class QuestsScreen extends Screen {
         ));
         addObjectiveBtn.active = objectives.size() < QuestDefinition.MAX_OBJECTIVES;
 
-        boolean isConfirm = (deleteConfirmIndex == selectedIndex);
-        Component delLabel = Component.translatable(isConfirm
-                ? "gui.questnpc.quests.delete_confirm" : "gui.questnpc.quests.delete");
-        int delBtnY = panelY + PANEL_HEIGHT - 50;
-        deleteQuestBtn = this.addRenderableWidget(new DarkButton(
-                formX + formW - 90, delBtnY, 90, 14,
-                delLabel, btn -> handleDeleteClick(),
+        // Секция «УСЛОВИЯ ВЫДАЧИ» (v2.9.3) — collapse-toggle + строки
+        int prereqY = y + objCount * OBJ_ROW_H + 22;
+        buildPrerequisitesSection(formX + 4, prereqY, formW - 8, q);
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Prerequisites section (v2.9.3)
+    // ═══════════════════════════════════════════════════════════════════
+
+    private void buildPrerequisitesSection(int x, int y, int w, QuestDefinition q) {
+        // Сброс кэша геометрии prereq-строк
+        for (int i = 0; i < QuestDefinition.MAX_PREREQUISITES; i++) {
+            prereqMinDistanceBoxes[i] = null;
+            prereqPickBounds[i] = new int[]{-1, -1, 0, 0};
+        }
+
+        // Collapse-toggle header — кликабельная строка с символом и счётчиком
+        String headerLabel = (prerequisitesExpanded ? "▼ " : "▶ ")
+                + Component.translatable("gui.questnpc.quests.prerequisites.section").getString()
+                + " (" + q.getPrerequisites().size() + "/" + QuestDefinition.MAX_PREREQUISITES + ")";
+        this.addRenderableWidget(new DarkButton(
+                x, y, w, 14, Component.literal(headerLabel),
+                btn -> { prerequisitesExpanded = !prerequisitesExpanded; reinit(); }
+        ));
+
+        if (!prerequisitesExpanded) return;
+
+        // Rows (до PREREQ_VISIBLE)
+        int rowY = y + 16;
+        List<QuestCondition> prereqs = q.getPrerequisites();
+        int visible = Math.min(prereqs.size(), PREREQ_VISIBLE);
+        for (int i = 0; i < visible; i++) {
+            buildPrerequisiteRow(x, rowY + i * PREREQ_ROW_H, w, i, prereqs.get(i));
+        }
+
+        // «+ Добавить условие»
+        int addBtnY = rowY + visible * PREREQ_ROW_H + 2;
+        DarkButton addBtn = this.addRenderableWidget(new DarkButton(
+                x, addBtnY, w, 12,
+                Component.translatable("gui.questnpc.quests.prerequisites.add"),
+                btn -> addNewPrerequisite(),
+                NPCMenuScreen.BTN_GRAY_BG, NPCMenuScreen.BTN_GRAY_HOVER, NPCMenuScreen.TEXT_WHITE
+        ));
+        addBtn.active = prereqs.size() < QuestDefinition.MAX_PREREQUISITES;
+    }
+
+    private void buildPrerequisiteRow(int x, int y, int w, int slotIdx, QuestCondition cond) {
+        // Type cycler — disabled, отображает имя типа. Только DISTANCE_TO_STRUCTURE реализован.
+        DarkButton typeBtn = this.addRenderableWidget(new DarkButton(
+                x, y, 110, 18,
+                Component.translatable("gui.questnpc.quests.prerequisites.type." + cond.getType().name()),
+                btn -> {},
+                NPCMenuScreen.BTN_GRAY_BG, NPCMenuScreen.BTN_GRAY_HOVER, NPCMenuScreen.TEXT_DARK_GRAY
+        ));
+        typeBtn.active = false;
+        typeBtn.setTooltip(net.minecraft.client.gui.components.Tooltip.create(
+                Component.translatable("gui.questnpc.quests.prerequisites.future_type_tooltip")));
+
+        // Delete ✕ — общая для всех типов
+        final int slotIdxFinal = slotIdx;
+        this.addRenderableWidget(new DarkButton(
+                x + w - 20, y, 20, 18, Component.literal("✕"),
+                btn -> removePrerequisite(slotIdxFinal),
                 0xFF7F1D1D, 0xFFB91C1C, 0xFFFFFFFF
         ));
+
+        // Поля по типу
+        int fieldsX = x + 114;
+        int fieldsW = w - 110 - 20 - 8;
+
+        if (cond.getType() == ConditionType.DISTANCE_TO_STRUCTURE) {
+            renderDistanceToStructureFields((DistanceToStructureCondition) cond,
+                    slotIdx, fieldsX, y, fieldsW);
+        }
+        // PLAYER_LEVEL / COMPLETED_QUEST — пока не отображаются (cycler disabled)
+    }
+
+    private void renderDistanceToStructureFields(DistanceToStructureCondition cond,
+                                                  int slotIdx, int x, int y, int w) {
+        // [pickStructure: ~50%] [distance: 40px] [invert: 18px]
+        int invertW = 22;
+        int distW = 50;
+        int pickW = w - distW - invertW - 8;
+
+        // Pick tile — структура
+        net.minecraft.resources.ResourceLocation sid = cond.getStructureId();
+        String pickLabel = sid != null ? sid.toString()
+                : Component.translatable("gui.questnpc.quests.prerequisites.structure.not_selected").getString();
+        int pickX = x;
+        this.addRenderableWidget(new DarkButton(
+                pickX, y, pickW, 18, Component.literal(pickLabel),
+                btn -> Minecraft.getInstance().setScreen(new StructurePickerScreen(
+                        this, cond.getStructureId(), picked -> cond.setStructureId(picked)))
+        ));
+        prereqPickBounds[slotIdx] = new int[]{pickX, y, pickW, 18};
+
+        // Min distance EditBox
+        EditBox distBox = new EditBox(this.font, x + pickW + 4, y + 2, distW, 14,
+                Component.translatable("gui.questnpc.quests.prerequisites.min_distance"));
+        distBox.setMaxLength(5);
+        distBox.setValue(String.valueOf(cond.getMinDistance()));
+        distBox.setResponder(text -> {
+            try {
+                int v = Integer.parseInt(text.trim());
+                if (v >= 0 && v <= 10000) cond.setMinDistance(v);
+            } catch (NumberFormatException ignored) {}
+        });
+        distBox.setBordered(true);
+        this.addRenderableWidget(distBox);
+        prereqMinDistanceBoxes[slotIdx] = distBox;
+
+        // Invert mini-toggle
+        DarkButton invBtn = this.addRenderableWidget(new DarkButton(
+                x + pickW + 4 + distW + 4, y, invertW, 18,
+                Component.literal(cond.isInverted() ? "✓" : "✕"),
+                btn -> { cond.setInverted(!cond.isInverted()); reinit(); }
+        ));
+        invBtn.setTooltip(net.minecraft.client.gui.components.Tooltip.create(
+                Component.translatable("gui.questnpc.quests.prerequisites.invert")));
+    }
+
+    private void addNewPrerequisite() {
+        if (selectedIndex < 0) return;
+        QuestDefinition q = pendingQuests.get(selectedIndex);
+        if (q.getPrerequisites().size() >= QuestDefinition.MAX_PREREQUISITES) return;
+        try {
+            QuestCondition c = QuestCondition.createEmpty(ConditionType.DISTANCE_TO_STRUCTURE);
+            q.addPrerequisite(c);
+            reinit();
+        } catch (UnsupportedOperationException ex) {
+            // не должно случиться для DISTANCE_TO_STRUCTURE
+        }
+    }
+
+    private void removePrerequisite(int slotIdx) {
+        if (selectedIndex < 0) return;
+        QuestDefinition q = pendingQuests.get(selectedIndex);
+        if (slotIdx < 0 || slotIdx >= q.getPrerequisites().size()) return;
+        q.removePrerequisite(slotIdx);
+        reinit();
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -647,6 +799,18 @@ public class QuestsScreen extends Screen {
         for (QuestObjective obj : q.getObjectives()) {
             if (!isObjectiveValid(obj)) return false;
         }
+        // v2.9.3: prerequisites валидация
+        for (QuestCondition c : q.getPrerequisites()) {
+            if (!isConditionValid(c)) return false;
+        }
+        return true;
+    }
+
+    private boolean isConditionValid(QuestCondition c) {
+        if (c instanceof DistanceToStructureCondition d) {
+            return d.getStructureId() != null && d.getMinDistance() >= 0;
+        }
+        // Прочие типы пока не имплементированы — считаем валидными
         return true;
     }
 
@@ -758,7 +922,7 @@ public class QuestsScreen extends Screen {
                 formX, objHeaderY, NPCMenuScreen.SECTION_TITLE & 0x00FFFFFF, false);
         g.fill(formX, objHeaderY + 10, formX + formW, objHeaderY + 11, NPCMenuScreen.BORDER);
 
-        // Подсветка невалидных полей objectives
+        // Подсветка невалидных полей objectives + prerequisites (v2.9.3)
         if (showValidationErrors) {
             List<QuestObjective> objs = q.getObjectives();
             for (int i = 0; i < Math.min(objs.size(), OBJ_VISIBLE); i++) {
@@ -775,11 +939,28 @@ public class QuestsScreen extends Screen {
                     }
                 }
             }
+            if (prerequisitesExpanded) {
+                List<QuestCondition> prereqs = q.getPrerequisites();
+                for (int i = 0; i < Math.min(prereqs.size(), PREREQ_VISIBLE); i++) {
+                    if (!isConditionValid(prereqs.get(i))) {
+                        int[] pb = prereqPickBounds[i];
+                        if (pb != null && pb[0] >= 0) {
+                            NPCMenuScreen.drawOutlineRect(g, pb[0] - 1, pb[1] - 1, pb[2] + 2, pb[3] + 2,
+                                    NPCMenuScreen.TEXT_RED);
+                        }
+                        EditBox db = prereqMinDistanceBoxes[i];
+                        if (db != null) {
+                            NPCMenuScreen.drawOutlineRect(g, db.getX() - 1, db.getY() - 1,
+                                    db.getWidth() + 2, db.getHeight() + 2, NPCMenuScreen.TEXT_RED);
+                        }
+                    }
+                }
+            }
         }
 
-        // Hint про rewards
+        // Hint про rewards (теперь после prerequisites сдвинут чуть вниз)
         g.drawString(this.font, Component.translatable("gui.questnpc.quests.rewards_soon"),
-                formX, panelY + PANEL_HEIGHT - 70,
+                formX, panelY + PANEL_HEIGHT - 50,
                 NPCMenuScreen.TEXT_DARK_GRAY & 0x00FFFFFF, false);
     }
 
