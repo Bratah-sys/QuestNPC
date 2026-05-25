@@ -1,40 +1,63 @@
 package com.questnpc.client.gui;
 
+import com.questnpc.client.gui.picker.BiomePickerScreen;
+import com.questnpc.client.gui.picker.BlockCatalogScreen;
+import com.questnpc.client.gui.picker.BlockTagPickerScreen;
+import com.questnpc.client.gui.picker.EntityCatalogScreen;
+import com.questnpc.client.gui.picker.EntityTagPickerScreen;
+import com.questnpc.client.gui.picker.StructurePickerScreen;
 import com.questnpc.client.gui.widget.DarkButton;
 import com.questnpc.entity.QuestNPCEntity;
+import com.questnpc.entity.quest.ObjectiveType;
 import com.questnpc.entity.quest.QuestDefinition;
 import com.questnpc.entity.quest.QuestObjective;
+import com.questnpc.entity.quest.objective.BreakBlockObjective;
+import com.questnpc.entity.quest.objective.BringObjective;
 import com.questnpc.entity.quest.objective.KillObjective;
+import com.questnpc.entity.quest.objective.ReachBiomeObjective;
+import com.questnpc.entity.quest.objective.ReachStructureObjective;
 import com.questnpc.network.ModNetwork;
 import com.questnpc.network.UpdateNPCQuestsPacket;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphics;
-import net.minecraft.client.gui.components.AbstractWidget;
+import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.tags.TagKey;
+import net.minecraft.world.entity.EntityType;
+import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.block.Block;
 
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.regex.Pattern;
 
 /**
- * Редактор квестов NPC (v2.9.1 MVP).
+ * Редактор квестов NPC (v2.9.2 — Stage 3 «pickers + все типы objectives»).
  *
  * <p>Двухпанельный layout: слева список квестов (≤20) с кнопкой «+ Добавить», справа —
- * форма редактирования выбранного квеста (title, description, список целей ≤10).
+ * форма редактирования (title, description, список целей ≤10).
  *
- * <p>В MVP поддержан только тип objective KILL с временным text-полем для entityId
- * (без EntityCatalogScreen — pickers в Этапе 3). Другие типы целей (Bring/Break/Reach*)
- * имеют классы из Этапа 1, но без UI до Этапа 3. Tag-mode toggle — Этап 3.
- * Награды и условия — Этапы 4/6.
+ * <p>v2.9.2 расширение:
+ * <ul>
+ *   <li>Cycler типа objective активен — переключает {@link ObjectiveType} по кругу.
+ *       При смене типа objective пересоздаётся через {@link QuestObjective#createEmpty}
+ *       (параметры теряются — UX-простота, как Schedule).</li>
+ *   <li>UI для всех 5 типов: KILL, BRING, BREAK_BLOCK, REACH_BIOME, REACH_STRUCTURE.</li>
+ *   <li>Tag-mode toggle для KILL/BREAK_BLOCK — переключает между «конкретный» (Entity/BlockCatalogScreen)
+ *       и «по тегу» (EntityTag/BlockTagPickerScreen). Смена режима очищает противоположное поле.</li>
+ *   <li>Pickers — full-screen (EntityCatalogScreen, BlockCatalogScreen, BiomePickerScreen,
+ *       StructurePickerScreen, EntityTagPickerScreen, BlockTagPickerScreen + переиспользуемый
+ *       {@link ItemCatalogScreen} для BringObjective).</li>
+ *   <li>BreakBlockObjective.dropRequired — checkbox с tooltip «Stage 5» (логика drop-tracking
+ *       вне scope этого этапа).</li>
+ * </ul>
  *
- * <p>Все изменения локальны (мутируют {@link #pendingQuests}) до нажатия «Применить»,
- * которое шлёт {@link UpdateNPCQuestsPacket}, обновляет parent через
- * {@link NPCMenuScreen#setQuestsSnapshot} и возвращает в parent через
- * {@code setScreen(parentScreen)} (паттерн v2.8.1).
+ * <p>Все изменения локальны до Apply ({@link UpdateNPCQuestsPacket}). Реальная проверка
+ * прогресса (isComplete/matches) — Этап 5.
  */
 public class QuestsScreen extends Screen {
 
@@ -46,23 +69,18 @@ public class QuestsScreen extends Screen {
     // Левая колонка (список квестов)
     private static final int LIST_WIDTH     = 105;
     private static final int LIST_ROW_H     = 16;
-    private static final int LIST_VISIBLE_ROWS = 11; // помещается в высоту панели
-    private static final int LIST_Y_OFFSET  = 50;    // относительно panelY
+    private static final int LIST_VISIBLE_ROWS = 11;
+    private static final int LIST_Y_OFFSET  = 50;
 
-    // Правая колонка (форма)
-    private static final int FORM_X_OFFSET  = LIST_WIDTH + 6; // относительно panelX + PADDING
-    private static final int OBJ_ROW_H      = 22;
-    private static final int OBJ_VISIBLE    = 4;  // визуально помещается до 4 целей без скролла
+    // Правая колонка
+    private static final int FORM_X_OFFSET  = LIST_WIDTH + 6;
+    private static final int OBJ_ROW_H      = 24; // v2.9.2 чуть выше — нужен второй ряд для tag-mode
+    private static final int OBJ_VISIBLE    = 3;  // 3 цели влезает с увеличенной высотой строки
 
-    // Цвет выделения выбранного квеста в списке
     private static final int LIST_SELECTED_BG = 0xFF2DD4BF;
     private static final int LIST_NORMAL_BG   = 0xFF374151;
     private static final int LIST_HOVER_BG    = 0xFF4B5563;
 
-    // Regex для валидации entityId (формат ResourceLocation: namespace:path)
-    private static final Pattern ENTITY_ID_PATTERN = Pattern.compile("^[a-z0-9_.-]+:[a-z0-9_/.-]+$");
-
-    // Лимиты счётчика убийств в objective
     private static final int COUNT_MIN = 1;
     private static final int COUNT_MAX = 9999;
 
@@ -70,34 +88,31 @@ public class QuestsScreen extends Screen {
     private final QuestNPCEntity npc;
     private final Screen parentScreen;
 
-    /** Рабочая копия списка квестов (мутируется EditBox responders). Изначально — deep-copy из parent. */
     private final List<QuestDefinition> pendingQuests = new ArrayList<>();
     private boolean pendingQuestsEnabled;
 
     private int selectedIndex = -1;
     private int scrollOffset = 0;
 
-    /** True если хотя бы одна попытка Apply провалилась — для подсветки невалидных полей. */
     private boolean showValidationErrors = false;
-
-    /** Двойной клик для удаления квеста — индекс ожидающего подтверждения. -1 = нет. */
     private int deleteConfirmIndex = -1;
 
     private int panelX, panelY;
 
-    // ─── Виджеты (пересоздаются при init() и при смене selectedIndex) ──
+    // ─── Виджеты ─────────────────────────────────────────────────────────
     private DarkButton enableToggleBtn;
     private DarkButton addQuestBtn;
     private DarkButton scrollUpBtn;
     private DarkButton scrollDownBtn;
-    // Форма редактирования (создаётся когда selectedIndex != -1)
     @Nullable private EditBox titleBox;
     @Nullable private EditBox descBox;
     @Nullable private DarkButton deleteQuestBtn;
     @Nullable private DarkButton addObjectiveBtn;
-    // Objective rows (до OBJ_VISIBLE)
-    @Nullable private final EditBox[] objEntityBoxes = new EditBox[10]; // на 10 целей макс
-    @Nullable private final EditBox[] objCountBoxes  = new EditBox[10];
+
+    /** Геометрия EditBox count'а каждой видимой objective — для красной подсветки. */
+    @Nullable private final EditBox[] objCountBoxes = new EditBox[QuestDefinition.MAX_OBJECTIVES];
+    /** Геометрия «pick»-плитки каждой видимой objective — для красной подсветки невалидных. */
+    @Nullable private final int[][] objPickBounds = new int[QuestDefinition.MAX_OBJECTIVES][4]; // [x,y,w,h]
 
     public QuestsScreen(QuestNPCEntity npc,
                         Screen parentScreen,
@@ -110,7 +125,7 @@ public class QuestsScreen extends Screen {
         this.pendingQuestsEnabled = initialEnabled;
         if (initialQuests != null) {
             for (QuestDefinition q : initialQuests) {
-                if (q != null) pendingQuests.add(QuestDefinition.load(q.save())); // deep copy
+                if (q != null) pendingQuests.add(QuestDefinition.load(q.save()));
             }
         }
     }
@@ -124,22 +139,15 @@ public class QuestsScreen extends Screen {
         int contentX = panelX + PADDING;
         int contentY = panelY + 28;
 
-        // ── Top bar: toggle + counter ──
         enableToggleBtn = this.addRenderableWidget(new DarkButton(
-                contentX, contentY, 140, 18,
-                buildEnableLabel(),
-                btn -> {
-                    pendingQuestsEnabled = !pendingQuestsEnabled;
-                    btn.setMessage(buildEnableLabel());
-                }
+                contentX, contentY, 140, 18, buildEnableLabel(),
+                btn -> { pendingQuestsEnabled = !pendingQuestsEnabled; btn.setMessage(buildEnableLabel()); }
         ));
 
-        // ── Left column: список квестов ──
         int listX = contentX;
         int listY = panelY + LIST_Y_OFFSET;
         rebuildListWidgets(listX, listY);
 
-        // ── Add quest button (под списком) ──
         int addBtnY = listY + LIST_VISIBLE_ROWS * LIST_ROW_H + 4;
         addQuestBtn = this.addRenderableWidget(new DarkButton(
                 listX, addBtnY, LIST_WIDTH - 2, 16,
@@ -149,11 +157,9 @@ public class QuestsScreen extends Screen {
         ));
         addQuestBtn.active = pendingQuests.size() < QuestNPCEntity.MAX_QUESTS;
 
-        // ── Scroll buttons (right strip of list, видимы при > LIST_VISIBLE_ROWS) ──
         int scrollX = listX + LIST_WIDTH - 14 - 2;
         scrollUpBtn = this.addRenderableWidget(new DarkButton(
-                scrollX, listY + 2, 14, 14,
-                Component.literal("▲"),
+                scrollX, listY + 2, 14, 14, Component.literal("▲"),
                 btn -> { if (scrollOffset > 0) { scrollOffset--; reinit(); } }
         ));
         scrollDownBtn = this.addRenderableWidget(new DarkButton(
@@ -161,8 +167,7 @@ public class QuestsScreen extends Screen {
                 Component.literal("▼"),
                 btn -> {
                     if (scrollOffset + LIST_VISIBLE_ROWS < pendingQuests.size()) {
-                        scrollOffset++;
-                        reinit();
+                        scrollOffset++; reinit();
                     }
                 }
         ));
@@ -172,27 +177,22 @@ public class QuestsScreen extends Screen {
         scrollUpBtn.active = scrollOffset > 0;
         scrollDownBtn.active = scrollOffset + LIST_VISIBLE_ROWS < pendingQuests.size();
 
-        // ── Right column: form для выбранного квеста ──
         if (selectedIndex >= 0 && selectedIndex < pendingQuests.size()) {
             buildEditorWidgets(contentX + FORM_X_OFFSET, panelY + LIST_Y_OFFSET);
         }
 
-        // ── Bottom bar: Back / Cancel / Apply ──
         int btnY = panelY + PANEL_HEIGHT - 26;
-        // Back (left)
         this.addRenderableWidget(new DarkButton(
                 contentX, btnY, 60, 18,
                 Component.translatable("gui.questnpc.quests.back"),
                 btn -> Minecraft.getInstance().setScreen(parentScreen)
         ));
-        // Apply (right, green)
         this.addRenderableWidget(new DarkButton(
                 panelX + PANEL_WIDTH - PADDING - 80, btnY, 80, 18,
                 Component.translatable("gui.questnpc.npc_menu.apply"),
                 btn -> tryApply(),
                 NPCMenuScreen.BTN_GREEN_BG, NPCMenuScreen.BTN_GREEN_HOVER, 0xFFFFFFFF
         ));
-        // Cancel (between, gray)
         this.addRenderableWidget(new DarkButton(
                 panelX + PANEL_WIDTH - PADDING - 80 - 60 - 4, btnY, 60, 18,
                 Component.translatable("gui.questnpc.npc_menu.cancel"),
@@ -203,12 +203,10 @@ public class QuestsScreen extends Screen {
 
     private Component buildEnableLabel() {
         return Component.translatable(pendingQuestsEnabled
-                ? "gui.questnpc.quests.enabled"
-                : "gui.questnpc.quests.disabled");
+                ? "gui.questnpc.quests.enabled" : "gui.questnpc.quests.disabled");
     }
 
     private void rebuildListWidgets(int listX, int listY) {
-        // Кнопки-строки списка — клик выбирает квест.
         int visibleEnd = Math.min(scrollOffset + LIST_VISIBLE_ROWS, pendingQuests.size());
         for (int i = scrollOffset; i < visibleEnd; i++) {
             final int idx = i;
@@ -222,11 +220,7 @@ public class QuestsScreen extends Screen {
             this.addRenderableWidget(new DarkButton(
                     listX, rowY, LIST_WIDTH - 2, LIST_ROW_H - 1,
                     Component.literal(label),
-                    btn -> {
-                        selectedIndex = idx;
-                        deleteConfirmIndex = -1; // сбрасываем confirm при смене квеста
-                        reinit();
-                    },
+                    btn -> { selectedIndex = idx; deleteConfirmIndex = -1; reinit(); },
                     bg, LIST_HOVER_BG, textColor
             ));
         }
@@ -238,42 +232,42 @@ public class QuestsScreen extends Screen {
 
     private void buildEditorWidgets(int formX, int formY) {
         QuestDefinition q = pendingQuests.get(selectedIndex);
-
         int formW = PANEL_WIDTH - LIST_WIDTH - PADDING * 2 - 6;
         int y = formY;
 
-        // ── Секция «КВЕСТ» ──
-        y += 18; // под header текст рисуется в render()
-        // Title
+        // Секция «КВЕСТ»
+        y += 18;
         titleBox = new EditBox(this.font, formX + 4, y, formW - 8, 14,
                 Component.translatable("gui.questnpc.quests.title_field"));
         titleBox.setMaxLength(QuestDefinition.MAX_TITLE_LENGTH);
         titleBox.setValue(q.getTitle());
-        titleBox.setResponder(text -> q.setTitle(text));
+        titleBox.setResponder(q::setTitle);
         titleBox.setBordered(true);
         this.addRenderableWidget(titleBox);
 
         y += 20;
-        // Description
         descBox = new EditBox(this.font, formX + 4, y, formW - 8, 14,
                 Component.translatable("gui.questnpc.quests.desc_field"));
         descBox.setMaxLength(QuestDefinition.MAX_DESCRIPTION_LENGTH);
         descBox.setValue(q.getDescription());
-        descBox.setResponder(text -> q.setDescription(text));
+        descBox.setResponder(q::setDescription);
         descBox.setBordered(true);
         this.addRenderableWidget(descBox);
 
-        y += 26;
-        // ── Секция «ЦЕЛИ» ──
-        y += 16; // под header
+        // Секция «ЦЕЛИ»
+        y += 26 + 16;
 
         List<QuestObjective> objectives = q.getObjectives();
         int objCount = Math.min(objectives.size(), OBJ_VISIBLE);
+        // Сброс кэша геометрии перед перестройкой
+        for (int i = 0; i < QuestDefinition.MAX_OBJECTIVES; i++) {
+            objCountBoxes[i] = null;
+            objPickBounds[i] = new int[]{-1, -1, 0, 0};
+        }
         for (int i = 0; i < objCount; i++) {
             buildObjectiveRow(formX + 4, y + i * OBJ_ROW_H, formW - 8, i, objectives.get(i));
         }
 
-        // Кнопка «+ Добавить цель»
         addObjectiveBtn = this.addRenderableWidget(new DarkButton(
                 formX + 4, y + objCount * OBJ_ROW_H + 2, formW - 8, 14,
                 Component.translatable("gui.questnpc.quests.add_objective"),
@@ -282,50 +276,126 @@ public class QuestsScreen extends Screen {
         ));
         addObjectiveBtn.active = objectives.size() < QuestDefinition.MAX_OBJECTIVES;
 
-        // ── Кнопка «Удалить квест» внизу формы ──
         boolean isConfirm = (deleteConfirmIndex == selectedIndex);
         Component delLabel = Component.translatable(isConfirm
-                ? "gui.questnpc.quests.delete_confirm"
-                : "gui.questnpc.quests.delete");
+                ? "gui.questnpc.quests.delete_confirm" : "gui.questnpc.quests.delete");
         int delBtnY = panelY + PANEL_HEIGHT - 50;
         deleteQuestBtn = this.addRenderableWidget(new DarkButton(
                 formX + formW - 90, delBtnY, 90, 14,
-                delLabel,
-                btn -> handleDeleteClick(),
+                delLabel, btn -> handleDeleteClick(),
                 0xFF7F1D1D, 0xFFB91C1C, 0xFFFFFFFF
         ));
     }
 
+    // ═══════════════════════════════════════════════════════════════════
+    // Objective row — type cycler + dispatch по типу
+    // ═══════════════════════════════════════════════════════════════════
+
     private void buildObjectiveRow(int x, int y, int w, int slotIdx, QuestObjective obj) {
-        if (!(obj instanceof KillObjective ko)) return; // в MVP только KILL
-
-        // Type cycler (disabled, tooltip)
+        // Type cycler (v2.9.2: активен — переключает по 5 типам)
         DarkButton typeBtn = this.addRenderableWidget(new DarkButton(
-                x, y, 36, 18,
-                Component.translatable("gui.questnpc.quests.type_kill"),
-                btn -> {}, // disabled, в этапе 3 станет cycler
-                NPCMenuScreen.BTN_GRAY_BG, NPCMenuScreen.BTN_GRAY_HOVER, NPCMenuScreen.TEXT_DARK_GRAY
+                x, y, 50, 18,
+                Component.translatable(typeKey(obj.getType())),
+                btn -> cycleObjectiveType(slotIdx),
+                NPCMenuScreen.BTN_GRAY_BG, NPCMenuScreen.BTN_GRAY_HOVER, NPCMenuScreen.TEXT_WHITE
         ));
-        typeBtn.active = false; // Disabled
-        typeBtn.setTooltip(net.minecraft.client.gui.components.Tooltip.create(
-                Component.translatable("gui.questnpc.quests.type_locked")));
 
-        // entityId EditBox
-        EditBox entityBox = new EditBox(this.font, x + 40, y + 2, w - 40 - 60 - 24, 14,
-                Component.translatable("gui.questnpc.quests.entity_id"));
-        entityBox.setMaxLength(64);
-        entityBox.setValue(ko.getEntityType() != null ? ko.getEntityType().toString() : "");
-        entityBox.setHint(Component.literal("minecraft:zombie"));
-        entityBox.setResponder(text -> {
-            ResourceLocation rl = ResourceLocation.tryParse(text);
-            ko.setEntityType(rl);
-        });
-        entityBox.setBordered(true);
-        this.addRenderableWidget(entityBox);
-        objEntityBoxes[slotIdx] = entityBox;
+        // Кнопка ✕ — общая для всех типов
+        final int slotIdxFinal = slotIdx;
+        this.addRenderableWidget(new DarkButton(
+                x + w - 20, y, 20, 18, Component.literal("✕"),
+                btn -> removeObjective(slotIdxFinal),
+                0xFF7F1D1D, 0xFFB91C1C, 0xFFFFFFFF
+        ));
 
-        // count EditBox
-        EditBox countBox = new EditBox(this.font, x + w - 80, y + 2, 56, 14,
+        // Dispatch по типу — оставшаяся область шириной (w - 50 - 20 - 4) = w - 74
+        int fieldsX = x + 52;
+        int fieldsW = w - 50 - 20 - 4;
+
+        switch (obj.getType()) {
+            case KILL -> renderKillFields((KillObjective) obj, slotIdx, fieldsX, y, fieldsW);
+            case BRING -> renderBringFields((BringObjective) obj, slotIdx, fieldsX, y, fieldsW);
+            case BREAK_BLOCK -> renderBreakBlockFields((BreakBlockObjective) obj, slotIdx, fieldsX, y, fieldsW);
+            case REACH_BIOME -> renderReachBiomeFields((ReachBiomeObjective) obj, slotIdx, fieldsX, y, fieldsW);
+            case REACH_STRUCTURE -> renderReachStructureFields((ReachStructureObjective) obj, slotIdx, fieldsX, y, fieldsW);
+        }
+    }
+
+    private void cycleObjectiveType(int slotIdx) {
+        if (selectedIndex < 0) return;
+        QuestDefinition q = pendingQuests.get(selectedIndex);
+        if (slotIdx < 0 || slotIdx >= q.getObjectives().size()) return;
+        ObjectiveType current = q.getObjectives().get(slotIdx).getType();
+        ObjectiveType[] all = ObjectiveType.values();
+        ObjectiveType next = all[(current.ordinal() + 1) % all.length];
+        // Замена objective — старые поля теряются
+        q.removeObjective(slotIdx);
+        QuestObjective replacement = QuestObjective.createEmpty(next);
+        // Вставка в ту же позицию через clear/re-add (QuestDefinition не имеет insertAt)
+        List<QuestObjective> snapshot = new ArrayList<>(q.getObjectives());
+        snapshot.add(slotIdx, replacement);
+        q.clearObjectives();
+        for (QuestObjective o : snapshot) q.addObjective(o);
+        reinit();
+    }
+
+    private static String typeKey(ObjectiveType type) {
+        return "gui.questnpc.quests.objective.type." + type.name();
+    }
+
+    // ───────────────────────────────────────────
+    // KILL fields
+    // ───────────────────────────────────────────
+    private void renderKillFields(KillObjective ko, int slotIdx, int x, int y, int w) {
+        // Tag-mode toggle (60px) + pick tile (variable) + count (50px)
+        int toggleW = 70;
+        int countW = 50;
+        int pickW = w - toggleW - countW - 8;
+
+        DarkButton toggleBtn = this.addRenderableWidget(new DarkButton(
+                x, y, toggleW, 18,
+                Component.translatable(ko.isTagMode()
+                        ? "gui.questnpc.quests.objective.tag_mode.tag"
+                        : "gui.questnpc.quests.objective.tag_mode.specific"),
+                btn -> {
+                    ko.setTagMode(!ko.isTagMode());
+                    // Очистка противоположного поля при смене режима (destructive — MVP)
+                    if (ko.isTagMode()) { ko.setEntityType(null); }
+                    else { ko.setEntityTypeTag(null); }
+                    reinit();
+                }
+        ));
+
+        // Pick tile
+        Component pickLabel;
+        if (ko.isTagMode()) {
+            TagKey<EntityType<?>> tag = ko.getEntityTypeTag();
+            pickLabel = Component.literal(tag != null ? "#" + tag.location().toString()
+                    : notSelected());
+        } else {
+            ResourceLocation rl = ko.getEntityType();
+            pickLabel = Component.literal(rl != null ? rl.toString() : notSelected());
+        }
+        int pickX = x + toggleW + 4;
+        int pickY = y;
+        this.addRenderableWidget(new DarkButton(
+                pickX, pickY, pickW, 18, pickLabel,
+                btn -> {
+                    if (ko.isTagMode()) {
+                        Minecraft.getInstance().setScreen(new EntityTagPickerScreen(
+                                this, ko.getEntityTypeTag(),
+                                picked -> ko.setEntityTypeTag(picked)));
+                    } else {
+                        Minecraft.getInstance().setScreen(new EntityCatalogScreen(
+                                this, ko.getEntityType(),
+                                picked -> ko.setEntityType(picked)));
+                    }
+                }
+        ));
+        objPickBounds[slotIdx] = new int[]{pickX, pickY, pickW, 18};
+
+        // Count
+        EditBox countBox = new EditBox(this.font, x + toggleW + 4 + pickW + 4, y + 2, countW, 14,
                 Component.translatable("gui.questnpc.quests.count_field"));
         countBox.setMaxLength(4);
         countBox.setValue(String.valueOf(ko.getCount()));
@@ -333,29 +403,177 @@ public class QuestsScreen extends Screen {
             try {
                 int v = Integer.parseInt(text.trim());
                 if (v >= COUNT_MIN && v <= COUNT_MAX) ko.setCount(v);
-            } catch (NumberFormatException ignored) { /* not applied */ }
+            } catch (NumberFormatException ignored) {}
+        });
+        countBox.setBordered(true);
+        this.addRenderableWidget(countBox);
+        objCountBoxes[slotIdx] = countBox;
+    }
+
+    // ───────────────────────────────────────────
+    // BRING fields — uses existing ItemCatalogScreen
+    // ───────────────────────────────────────────
+    private void renderBringFields(BringObjective bo, int slotIdx, int x, int y, int w) {
+        int countW = 50;
+        int consumeW = 70;
+        int pickW = w - countW - consumeW - 8;
+
+        ItemStack stack = bo.getStack();
+        String label = stack.isEmpty() ? notSelected() : stack.getHoverName().getString();
+        int pickX = x;
+        int pickY = y;
+        this.addRenderableWidget(new DarkButton(
+                pickX, pickY, pickW, 18, Component.literal(label),
+                btn -> {
+                    // Переиспользуем универсальный ctor ItemCatalogScreen (v2.8.0)
+                    Minecraft.getInstance().setScreen(new ItemCatalogScreen(
+                            this,
+                            stack.isEmpty() ? null : stack.getItem(),
+                            null, // без фильтра
+                            picked -> bo.setStack(picked == null ? ItemStack.EMPTY : new ItemStack(picked))
+                    ));
+                }
+        ));
+        objPickBounds[slotIdx] = new int[]{pickX, pickY, pickW, 18};
+
+        EditBox countBox = new EditBox(this.font, x + pickW + 4, y + 2, countW, 14,
+                Component.translatable("gui.questnpc.quests.count_field"));
+        countBox.setMaxLength(4);
+        countBox.setValue(String.valueOf(bo.getCount()));
+        countBox.setResponder(text -> {
+            try {
+                int v = Integer.parseInt(text.trim());
+                if (v >= COUNT_MIN && v <= COUNT_MAX) bo.setCount(v);
+            } catch (NumberFormatException ignored) {}
         });
         countBox.setBordered(true);
         this.addRenderableWidget(countBox);
         objCountBoxes[slotIdx] = countBox;
 
-        // Delete objective ✕
-        final int slotIdxFinal = slotIdx;
+        // Consume toggle (compact)
         this.addRenderableWidget(new DarkButton(
-                x + w - 20, y, 20, 18,
-                Component.literal("✕"),
-                btn -> removeObjective(slotIdxFinal),
-                0xFF7F1D1D, 0xFFB91C1C, 0xFFFFFFFF
-        ));
+                x + pickW + 4 + countW + 4, y, consumeW, 18,
+                Component.literal(bo.isConsumeOnTurnIn() ? "✓" : "✕"),
+                btn -> { bo.setConsumeOnTurnIn(!bo.isConsumeOnTurnIn()); reinit(); }
+        )).setTooltip(Tooltip.create(
+                Component.translatable("gui.questnpc.quests.objective.consume")));
     }
+
+    // ───────────────────────────────────────────
+    // BREAK_BLOCK fields
+    // ───────────────────────────────────────────
+    private void renderBreakBlockFields(BreakBlockObjective bb, int slotIdx, int x, int y, int w) {
+        int toggleW = 70;
+        int countW = 50;
+        int dropW = 24;
+        int pickW = w - toggleW - countW - dropW - 12;
+
+        DarkButton toggleBtn = this.addRenderableWidget(new DarkButton(
+                x, y, toggleW, 18,
+                Component.translatable(bb.isTagMode()
+                        ? "gui.questnpc.quests.objective.tag_mode.tag"
+                        : "gui.questnpc.quests.objective.tag_mode.specific"),
+                btn -> {
+                    bb.setTagMode(!bb.isTagMode());
+                    if (bb.isTagMode()) bb.setBlockId(null);
+                    else bb.setBlockTag(null);
+                    reinit();
+                }
+        ));
+
+        Component pickLabel;
+        if (bb.isTagMode()) {
+            TagKey<Block> tag = bb.getBlockTag();
+            pickLabel = Component.literal(tag != null ? "#" + tag.location().toString()
+                    : notSelected());
+        } else {
+            ResourceLocation rl = bb.getBlockId();
+            pickLabel = Component.literal(rl != null ? rl.toString() : notSelected());
+        }
+        int pickX = x + toggleW + 4;
+        this.addRenderableWidget(new DarkButton(
+                pickX, y, pickW, 18, pickLabel,
+                btn -> {
+                    if (bb.isTagMode()) {
+                        Minecraft.getInstance().setScreen(new BlockTagPickerScreen(
+                                this, bb.getBlockTag(), picked -> bb.setBlockTag(picked)));
+                    } else {
+                        Minecraft.getInstance().setScreen(new BlockCatalogScreen(
+                                this, bb.getBlockId(), picked -> bb.setBlockId(picked)));
+                    }
+                }
+        ));
+        objPickBounds[slotIdx] = new int[]{pickX, y, pickW, 18};
+
+        EditBox countBox = new EditBox(this.font, x + toggleW + 4 + pickW + 4, y + 2, countW, 14,
+                Component.translatable("gui.questnpc.quests.count_field"));
+        countBox.setMaxLength(4);
+        countBox.setValue(String.valueOf(bb.getCount()));
+        countBox.setResponder(text -> {
+            try {
+                int v = Integer.parseInt(text.trim());
+                if (v >= COUNT_MIN && v <= COUNT_MAX) bb.setCount(v);
+            } catch (NumberFormatException ignored) {}
+        });
+        countBox.setBordered(true);
+        this.addRenderableWidget(countBox);
+        objCountBoxes[slotIdx] = countBox;
+
+        // dropRequired — disabled checkbox (Stage 5)
+        DarkButton dropBtn = this.addRenderableWidget(new DarkButton(
+                x + toggleW + 4 + pickW + 4 + countW + 4, y, dropW, 18,
+                Component.literal(bb.isDropRequired() ? "D✓" : "D"),
+                btn -> {}
+        ));
+        dropBtn.active = false;
+        dropBtn.setTooltip(Tooltip.create(
+                Component.translatable("gui.questnpc.quests.objective.drop_required_locked")));
+    }
+
+    // ───────────────────────────────────────────
+    // REACH_BIOME fields
+    // ───────────────────────────────────────────
+    private void renderReachBiomeFields(ReachBiomeObjective rb, int slotIdx, int x, int y, int w) {
+        ResourceLocation rl = rb.getBiomeId();
+        String label = rl != null ? rl.toString() : notSelected();
+        int pickX = x;
+        this.addRenderableWidget(new DarkButton(
+                pickX, y, w, 18, Component.literal(label),
+                btn -> Minecraft.getInstance().setScreen(new BiomePickerScreen(
+                        this, rb.getBiomeId(), picked -> rb.setBiomeId(picked)))
+        ));
+        objPickBounds[slotIdx] = new int[]{pickX, y, w, 18};
+    }
+
+    // ───────────────────────────────────────────
+    // REACH_STRUCTURE fields
+    // ───────────────────────────────────────────
+    private void renderReachStructureFields(ReachStructureObjective rs, int slotIdx, int x, int y, int w) {
+        ResourceLocation rl = rs.getStructureId();
+        String label = rl != null ? rl.toString() : notSelected();
+        int pickX = x;
+        this.addRenderableWidget(new DarkButton(
+                pickX, y, w, 18, Component.literal(label),
+                btn -> Minecraft.getInstance().setScreen(new StructurePickerScreen(
+                        this, rs.getStructureId(), picked -> rs.setStructureId(picked)))
+        ));
+        objPickBounds[slotIdx] = new int[]{pickX, y, w, 18};
+    }
+
+    private static String notSelected() {
+        return Component.translatable("gui.questnpc.quests.objective.not_selected").getString();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Actions
+    // ═══════════════════════════════════════════════════════════════════
 
     private void addNewQuest() {
         if (pendingQuests.size() >= QuestNPCEntity.MAX_QUESTS) return;
         QuestDefinition q = new QuestDefinition();
-        q.addObjective(new KillObjective()); // UX: сразу видна форма objective
+        q.addObjective(new KillObjective());
         pendingQuests.add(q);
         selectedIndex = pendingQuests.size() - 1;
-        // Scroll to end if needed
         if (selectedIndex >= scrollOffset + LIST_VISIBLE_ROWS) {
             scrollOffset = selectedIndex - LIST_VISIBLE_ROWS + 1;
         }
@@ -368,7 +586,7 @@ public class QuestsScreen extends Screen {
         if (selectedIndex < 0) return;
         QuestDefinition q = pendingQuests.get(selectedIndex);
         if (q.getObjectives().size() >= QuestDefinition.MAX_OBJECTIVES) return;
-        q.addObjective(new KillObjective());
+        q.addObjective(new KillObjective()); // дефолт — KILL, можно сразу циклить
         reinit();
     }
 
@@ -383,18 +601,15 @@ public class QuestsScreen extends Screen {
     private void handleDeleteClick() {
         if (selectedIndex < 0) return;
         if (deleteConfirmIndex != selectedIndex) {
-            // first click — ask confirmation
             deleteConfirmIndex = selectedIndex;
             if (deleteQuestBtn != null) {
                 deleteQuestBtn.setMessage(Component.translatable("gui.questnpc.quests.delete_confirm"));
             }
         } else {
-            // second click — actually delete
             pendingQuests.remove(selectedIndex);
             selectedIndex = -1;
             deleteConfirmIndex = -1;
             showValidationErrors = false;
-            // Корректировка scroll
             if (scrollOffset > 0 && scrollOffset + LIST_VISIBLE_ROWS > pendingQuests.size()) {
                 scrollOffset = Math.max(0, pendingQuests.size() - LIST_VISIBLE_ROWS);
             }
@@ -402,37 +617,24 @@ public class QuestsScreen extends Screen {
         }
     }
 
-    /** Полный re-init виджетов (вызывается при изменении selectedIndex, добавлении/удалении). */
-    private void reinit() {
-        this.clearWidgets();
-        this.init();
-    }
+    private void reinit() { this.clearWidgets(); this.init(); }
 
     private void tryApply() {
-        if (!validateAll()) {
-            showValidationErrors = true;
-            return;
-        }
+        if (!validateAll()) { showValidationErrors = true; return; }
         showValidationErrors = false;
-        // Отправляем пакет на сервер
         ModNetwork.INSTANCE.sendToServer(new UpdateNPCQuestsPacket(
                 npc.getId(), pendingQuestsEnabled, pendingQuests));
-        // v2.8.1 pattern: обновляем parent-snapshot локально, чтобы при reopen QuestsScreen
-        // данные были свежими без дожидания нового OpenNPCMenuPacket с сервера.
         if (parentScreen instanceof NPCMenuScreen npcm) {
             npcm.setQuestsSnapshot(pendingQuestsEnabled, pendingQuests);
         }
         Minecraft.getInstance().setScreen(parentScreen);
     }
 
-    /** Возвращает true если все квесты валидны. Side-effect: устанавливает selectedIndex на первый невалидный. */
     private boolean validateAll() {
         for (int i = 0; i < pendingQuests.size(); i++) {
-            QuestDefinition q = pendingQuests.get(i);
-            if (!isQuestValid(q)) {
+            if (!isQuestValid(pendingQuests.get(i))) {
                 selectedIndex = i;
-                scrollOffset = Math.max(0,
-                        Math.min(i, pendingQuests.size() - LIST_VISIBLE_ROWS));
+                scrollOffset = Math.max(0, Math.min(i, pendingQuests.size() - LIST_VISIBLE_ROWS));
                 return false;
             }
         }
@@ -443,34 +645,65 @@ public class QuestsScreen extends Screen {
         if (q.getTitle().trim().isEmpty()) return false;
         if (q.getObjectives().isEmpty()) return false;
         for (QuestObjective obj : q.getObjectives()) {
-            if (obj instanceof KillObjective ko) {
-                ResourceLocation rl = ko.getEntityType();
-                if (rl == null || !ENTITY_ID_PATTERN.matcher(rl.toString()).matches()) return false;
-                if (ko.getCount() < COUNT_MIN || ko.getCount() > COUNT_MAX) return false;
-            }
+            if (!isObjectiveValid(obj)) return false;
         }
         return true;
     }
+
+    private boolean isObjectiveValid(QuestObjective obj) {
+        switch (obj.getType()) {
+            case KILL -> {
+                KillObjective ko = (KillObjective) obj;
+                if (ko.isTagMode()) {
+                    if (ko.getEntityTypeTag() == null) return false;
+                } else {
+                    if (ko.getEntityType() == null) return false;
+                }
+                return ko.getCount() >= COUNT_MIN && ko.getCount() <= COUNT_MAX;
+            }
+            case BRING -> {
+                BringObjective bo = (BringObjective) obj;
+                if (bo.getStack().isEmpty()) return false;
+                return bo.getCount() >= COUNT_MIN && bo.getCount() <= COUNT_MAX;
+            }
+            case BREAK_BLOCK -> {
+                BreakBlockObjective bb = (BreakBlockObjective) obj;
+                if (bb.isTagMode()) {
+                    if (bb.getBlockTag() == null) return false;
+                } else {
+                    if (bb.getBlockId() == null) return false;
+                }
+                return bb.getCount() >= COUNT_MIN && bb.getCount() <= COUNT_MAX;
+            }
+            case REACH_BIOME -> {
+                return ((ReachBiomeObjective) obj).getBiomeId() != null;
+            }
+            case REACH_STRUCTURE -> {
+                return ((ReachStructureObjective) obj).getStructureId() != null;
+            }
+        }
+        return false;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Render
+    // ═══════════════════════════════════════════════════════════════════
 
     @Override
     public void render(GuiGraphics g, int mouseX, int mouseY, float partialTick) {
         g.fill(0, 0, this.width, this.height, NPCMenuScreen.BG_OVERLAY);
         NPCMenuScreen.drawPanel(g, panelX, panelY, PANEL_WIDTH, PANEL_HEIGHT);
 
-        // Заголовок
         g.drawCenteredString(this.font, this.title, panelX + PANEL_WIDTH / 2, panelY + 8,
                 NPCMenuScreen.TEXT_WHITE & 0x00FFFFFF);
         g.fill(panelX + 1, panelY + 22, panelX + PANEL_WIDTH - 1, panelY + 23, NPCMenuScreen.BORDER);
 
-        // Счётчик квестов справа от toggle
         String counter = Component.translatable("gui.questnpc.quests.count",
                 pendingQuests.size(), QuestNPCEntity.MAX_QUESTS).getString();
         g.drawString(this.font, counter,
-                panelX + PADDING + 150,
-                panelY + 33,
+                panelX + PADDING + 150, panelY + 33,
                 NPCMenuScreen.TEXT_GRAY & 0x00FFFFFF, false);
 
-        // Разделитель списка / формы
         int sepX = panelX + PADDING + LIST_WIDTH + 2;
         g.fill(sepX, panelY + LIST_Y_OFFSET - 4, sepX + 1,
                 panelY + PANEL_HEIGHT - 32, NPCMenuScreen.BORDER);
@@ -479,18 +712,17 @@ public class QuestsScreen extends Screen {
 
         renderRightPane(g, mouseX, mouseY);
 
-        // Validation status (bottom centre, выше bottom-buttons)
         if (showValidationErrors) {
-            String msg = Component.translatable("gui.questnpc.quests.validation_err").getString();
-            g.drawCenteredString(this.font, msg,
+            g.drawCenteredString(this.font,
+                    Component.translatable("gui.questnpc.quests.validation_err"),
                     panelX + PANEL_WIDTH / 2,
                     panelY + PANEL_HEIGHT - 42,
                     NPCMenuScreen.TEXT_RED & 0x00FFFFFF);
         }
 
-        // Футер
-        Component footer = Component.translatable("gui.questnpc.menu.footer");
-        g.drawCenteredString(this.font, footer, panelX + PANEL_WIDTH / 2, panelY + PANEL_HEIGHT - 9,
+        g.drawCenteredString(this.font,
+                Component.translatable("gui.questnpc.menu.footer"),
+                panelX + PANEL_WIDTH / 2, panelY + PANEL_HEIGHT - 9,
                 NPCMenuScreen.TEXT_DARK_GRAY & 0x00FFFFFF);
     }
 
@@ -500,11 +732,9 @@ public class QuestsScreen extends Screen {
         int formW = PANEL_WIDTH - LIST_WIDTH - PADDING * 2 - 6;
 
         if (selectedIndex < 0 || selectedIndex >= pendingQuests.size()) {
-            // Placeholder
-            Component hint = Component.translatable("gui.questnpc.quests.select_hint");
-            g.drawCenteredString(this.font, hint,
-                    formX + formW / 2,
-                    formY + 100,
+            g.drawCenteredString(this.font,
+                    Component.translatable("gui.questnpc.quests.select_hint"),
+                    formX + formW / 2, formY + 100,
                     NPCMenuScreen.TEXT_GRAY & 0x00FFFFFF);
             return;
         }
@@ -512,12 +742,11 @@ public class QuestsScreen extends Screen {
         QuestDefinition q = pendingQuests.get(selectedIndex);
 
         // Section header «КВЕСТ»
-        String qSection = Component.translatable("gui.questnpc.quests.quest_section").getString();
-        g.drawString(this.font, qSection, formX, formY + 4,
-                NPCMenuScreen.SECTION_TITLE & 0x00FFFFFF, false);
+        g.drawString(this.font, Component.translatable("gui.questnpc.quests.quest_section"),
+                formX, formY + 4, NPCMenuScreen.SECTION_TITLE & 0x00FFFFFF, false);
         g.fill(formX, formY + 14, formX + formW, formY + 15, NPCMenuScreen.BORDER);
 
-        // Подсветка невалидных полей при showValidationErrors
+        // Подсветка title если пуст
         if (showValidationErrors && titleBox != null && q.getTitle().trim().isEmpty()) {
             NPCMenuScreen.drawOutlineRect(g, titleBox.getX() - 1, titleBox.getY() - 1,
                     titleBox.getWidth() + 2, titleBox.getHeight() + 2, NPCMenuScreen.TEXT_RED);
@@ -525,42 +754,35 @@ public class QuestsScreen extends Screen {
 
         // Section header «ЦЕЛИ»
         int objHeaderY = formY + 18 + 20 + 26;
-        String oSection = Component.translatable("gui.questnpc.quests.objectives").getString();
-        g.drawString(this.font, oSection, formX, objHeaderY,
-                NPCMenuScreen.SECTION_TITLE & 0x00FFFFFF, false);
+        g.drawString(this.font, Component.translatable("gui.questnpc.quests.objectives"),
+                formX, objHeaderY, NPCMenuScreen.SECTION_TITLE & 0x00FFFFFF, false);
         g.fill(formX, objHeaderY + 10, formX + formW, objHeaderY + 11, NPCMenuScreen.BORDER);
 
-        // Подсветка невалидных objective полей
+        // Подсветка невалидных полей objectives
         if (showValidationErrors) {
             List<QuestObjective> objs = q.getObjectives();
             for (int i = 0; i < Math.min(objs.size(), OBJ_VISIBLE); i++) {
-                if (objs.get(i) instanceof KillObjective ko) {
-                    ResourceLocation rl = ko.getEntityType();
-                    boolean entityBad = (rl == null) || !ENTITY_ID_PATTERN.matcher(rl.toString()).matches();
-                    boolean countBad = ko.getCount() < COUNT_MIN || ko.getCount() > COUNT_MAX;
-                    if (entityBad && objEntityBoxes[i] != null) {
-                        EditBox b = objEntityBoxes[i];
-                        NPCMenuScreen.drawOutlineRect(g, b.getX() - 1, b.getY() - 1,
-                                b.getWidth() + 2, b.getHeight() + 2, NPCMenuScreen.TEXT_RED);
+                if (!isObjectiveValid(objs.get(i))) {
+                    int[] pb = objPickBounds[i];
+                    if (pb != null && pb[0] >= 0) {
+                        NPCMenuScreen.drawOutlineRect(g, pb[0] - 1, pb[1] - 1, pb[2] + 2, pb[3] + 2,
+                                NPCMenuScreen.TEXT_RED);
                     }
-                    if (countBad && objCountBoxes[i] != null) {
-                        EditBox b = objCountBoxes[i];
-                        NPCMenuScreen.drawOutlineRect(g, b.getX() - 1, b.getY() - 1,
-                                b.getWidth() + 2, b.getHeight() + 2, NPCMenuScreen.TEXT_RED);
+                    EditBox cb = objCountBoxes[i];
+                    if (cb != null) {
+                        NPCMenuScreen.drawOutlineRect(g, cb.getX() - 1, cb.getY() - 1,
+                                cb.getWidth() + 2, cb.getHeight() + 2, NPCMenuScreen.TEXT_RED);
                     }
                 }
             }
         }
 
         // Hint про rewards
-        Component soonHint = Component.translatable("gui.questnpc.quests.rewards_soon");
-        g.drawString(this.font, soonHint,
+        g.drawString(this.font, Component.translatable("gui.questnpc.quests.rewards_soon"),
                 formX, panelY + PANEL_HEIGHT - 70,
                 NPCMenuScreen.TEXT_DARK_GRAY & 0x00FFFFFF, false);
     }
 
     @Override
-    public boolean isPauseScreen() {
-        return false;
-    }
+    public boolean isPauseScreen() { return false; }
 }
