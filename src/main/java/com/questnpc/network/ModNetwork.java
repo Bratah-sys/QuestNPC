@@ -143,6 +143,13 @@ public final class ModNetwork {
                 UpdateEquipmentPacket::decode,
                 UpdateEquipmentPacket::handle
         );
+        INSTANCE.registerMessage(
+                17,
+                UpdateNPCQuestsPacket.class,
+                UpdateNPCQuestsPacket::encode,
+                UpdateNPCQuestsPacket::decode,
+                UpdateNPCQuestsPacket::handle
+        );
     }
 
     private ModNetwork() {}
