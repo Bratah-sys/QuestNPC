@@ -44,8 +44,15 @@ public class BreakBlockObjective extends QuestObjective {
     public void setDropRequired(boolean v) { this.dropRequired = v; }
 
     /** Этап 5 stub: всегда {@code false}. */
+// Замените старый метод matches на этот:
     public boolean matches(BlockState state) {
-        // TODO Stage 5: реальная проверка через block id / tag
+        if (tagMode && blockTag != null) {
+            return state.is(blockTag);
+        } else if (!tagMode && blockId != null) {
+            // Проверка по конкретному ID
+            ResourceLocation stateId = net.minecraftforge.registries.ForgeRegistries.BLOCKS.getKey(state.getBlock());
+            return stateId != null && stateId.equals(blockId);
+        }
         return false;
     }
 

@@ -157,6 +157,55 @@ public final class ModNetwork {
                 OpenNPCTradePacket::decode,
                 OpenNPCTradePacket::handle
         );
+        INSTANCE.registerMessage(
+                19,
+                RequestDialoguePacket.class,
+                RequestDialoguePacket::encode,
+                RequestDialoguePacket::decode,
+                RequestDialoguePacket::handle
+        );
+        INSTANCE.registerMessage(
+                20,
+                DialogueSyncPacket.class,
+                DialogueSyncPacket::encode,
+                DialogueSyncPacket::decode,
+                DialogueSyncPacket::handle
+        );
+        INSTANCE.registerMessage(
+                21,
+                DialogueChoicePacket.class,
+                DialogueChoicePacket::encode,
+                DialogueChoicePacket::decode,
+                DialogueChoicePacket::handle
+        );
+        INSTANCE.registerMessage(
+                22,
+                RequestPlayerQuestsPacket.class,
+                RequestPlayerQuestsPacket::encode,
+                RequestPlayerQuestsPacket::decode,
+                RequestPlayerQuestsPacket::handle
+        );
+        INSTANCE.registerMessage(
+                23,
+                SyncPlayerQuestsPacket.class,
+                SyncPlayerQuestsPacket::encode,
+                SyncPlayerQuestsPacket::decode,
+                SyncPlayerQuestsPacket::handle
+        );
+        INSTANCE.registerMessage(
+                24,
+                TurnInQuestPacket.class,
+                TurnInQuestPacket::encode,
+                TurnInQuestPacket::decode,
+                TurnInQuestPacket::handle
+        );
+        INSTANCE.registerMessage(
+                25,
+                SyncPlayerQuestDataPacket.class,
+                SyncPlayerQuestDataPacket::encode,
+                SyncPlayerQuestDataPacket::decode,
+                SyncPlayerQuestDataPacket::handle
+        );
     }
 
     private ModNetwork() {}

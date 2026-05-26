@@ -82,16 +82,13 @@ public class ModKeyBindings {
         }
 
         while (OPEN_QUEST_BOOK.consumeClick()) {
-            // Переключаем статус "Новый квест" в оверлее
-            QuestBookOverlay.setHasNewQuest(!QuestBookOverlay.hasNewQuest());
+            // Убираем уведомление о новом квесте, раз игрок открыл книгу
+            QuestBookOverlay.setHasNewQuest(false);
 
-            QuestNPCLogger.info("Статус уведомления изменен.");
-
-            // Тестовое сообщение
-            mc.player.displayClientMessage(
-                    Component.literal("§6[QuestNPC] §fСтатус уведомлений изменен!"),
-                    true
-            );
+            // Открываем экран журнала квестов, если никакой другой экран не открыт
+            if (mc.screen == null) {
+                mc.setScreen(new com.questnpc.client.gui.PlayerQuestScreen());
+            }
         }
     }
 }

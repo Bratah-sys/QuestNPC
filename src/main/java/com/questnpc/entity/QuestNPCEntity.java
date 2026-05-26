@@ -50,7 +50,16 @@ import software.bernie.geckolib.core.animation.AnimationController;
 import software.bernie.geckolib.core.animation.AnimationState;
 import software.bernie.geckolib.core.object.PlayState;
 import software.bernie.geckolib.util.GeckoLibUtil;
-
+import com.questnpc.capability.PlayerQuestProvider;
+import com.questnpc.capability.QuestState;
+import com.questnpc.entity.quest.QuestDefinition;
+import com.questnpc.entity.quest.QuestCondition;
+import com.questnpc.entity.quest.QuestObjective;
+import net.minecraft.network.chat.Component;
+import net.minecraft.sounds.SoundEvents;
+import net.minecraft.sounds.SoundSource;
+import net.minecraftforge.network.PacketDistributor;
+import com.questnpc.network.DialogueSyncPacket;
 import javax.annotation.Nullable;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -614,7 +623,114 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity, Merchant
         // v2.5.0: placeholder. Триггер GeckoLib-анимации подключим в v2.6
         // вместе с доработкой QuestNPCRenderer / QuestNPCGeoModel.
     }
+    /**
+     * Инициация диалога сервером (вызывается при клике на "Говорить" в UI)
+     */
+    public void startServerDialogue(ServerPlayer player) {
+        // TODO: Если у вас есть поле, хранящее имя файла диалога для этого NPC (например this.dialogueId), используйте его.
+        String currentDialogueId = "default_dialogue";
 
+        com.questnpc.dialogue.DialogueNode startNode = com.questnpc.dialogue.DialogueManager.getDialogueNode(currentDialogueId, "start");
+        if (startNode != null) {
+            com.questnpc.network.ModNetwork.INSTANCE.send(
+                    PacketDistributor.PLAYER.with(() -> player),
+                    new DialogueSyncPacket(this.getId(), startNode)
+            );
+        } else {
+            player.sendSystemMessage(Component.literal("§cУ этого NPC пока нет слов для вас."));
+        }
+    }
+
+    /**
+     * Обработка выбора игрока в диалоге
+     */
+    public void handleDialogueChoice(ServerPlayer player, String nextNodeId, String action) {
+        // 1. Перехват и обработка серверных действий (Actions)
+        if (action != null && !action.isEmpty()) {
+            if (action.startsWith("give_quest:")) {
+                String questId = action.substring("give_quest:".length());
+                tryGiveQuest(player, questId);
+            }
+            // В будущем здесь можно добавить "open_trade", "give_item" и т.д.
+        }
+
+        // 2. Навигация по узлам (если next_node = "close" или пусто, диалог закрывается)
+        if (nextNodeId == null || nextNodeId.isEmpty() || nextNodeId.equals("close")) {
+            return;
+        }
+
+        // 3. Отправка следующего узла диалога
+        String currentDialogueId = "default_dialogue"; // TODO: Замените на переменную имени диалога NPC
+        com.questnpc.dialogue.DialogueNode nextNode = com.questnpc.dialogue.DialogueManager.getDialogueNode(currentDialogueId, nextNodeId);
+
+        if (nextNode != null) {
+            com.questnpc.network.ModNetwork.INSTANCE.send(
+                    PacketDistributor.PLAYER.with(() -> player),
+                    new DialogueSyncPacket(this.getId(), nextNode)
+            );
+        }
+    }
+
+    /**
+     * Безопасная выдача квеста с проверкой всех условий
+     */
+    private void tryGiveQuest(ServerPlayer player, String questId) {
+        // 1. Ищем квест в локальном списке NPC (this.quests парсится из NBT)
+        QuestDefinition targetQuest = null;
+        for (QuestDefinition q : this.quests) {
+            if (q.getId().equals(questId)) {
+                targetQuest = q;
+                break;
+            }
+        }
+
+        if (targetQuest == null) {
+            QuestNPCLogger.warn("NPC {} попытался выдать несуществующий квест: {}", this.getId(), questId);
+            return;
+        }
+
+        final QuestDefinition finalQuest = targetQuest;
+
+        // 2. Достаем память игрока через Capability
+        player.getCapability(PlayerQuestProvider.PLAYER_QUEST_DATA).ifPresent(data -> {
+
+            // Защита: не выдаем квест дважды
+            if (data.hasQuest(questId)) {
+                player.sendSystemMessage(Component.literal("§cВы уже беретесь за это задание."));
+                return;
+            }
+
+            // 3. Проверка Prerequisites (Условий)
+            boolean canAccept = true;
+            for (QuestCondition condition : finalQuest.getPrerequisites()) {
+                boolean met = condition.isMet(player, this.blockPosition());
+                if (condition.isInverted()) {
+                    met = !met; // Инверсия: условие выполнено, если isMet = false
+                }
+                if (!met) {
+                    canAccept = false;
+                    break;
+                }
+            }
+
+            if (!canAccept) {
+                player.sendSystemMessage(Component.literal("§cВы не соответствуете требованиям для этого задания."));
+                return;
+            }
+
+            // 4. Запись квеста в память игрока
+            data.setQuestState(questId, QuestState.ACTIVE);
+
+            // Регистрация целей (Objectives): начинаем с прогресса 0
+            for (QuestObjective objective : finalQuest.getObjectives()) {
+                data.setObjectiveProgress(objective.getId(), 0L);
+            }
+
+            // 5. Визуальный фидбек
+            player.sendSystemMessage(Component.literal("§aНовое задание: §e" + finalQuest.getTitle()));
+            player.playNotifySound(SoundEvents.PLAYER_LEVELUP, SoundSource.PLAYERS, 1.0F, 1.0F);
+        });
+    }
     // -------------------------------------------------------------------------
     // Модель NPC
     // -------------------------------------------------------------------------
@@ -908,7 +1024,81 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity, Merchant
             QuestNPCLogger.debug("Торговля успешно открыта через Хаб для {}", player.getName().getString());
         }
     }
+    /**
+     * Возвращает ID файла диалога для этого NPC.
+     * Пока возвращаем дефолтный "test_rpc", позже привяжем к настройкам сущности.
+     */
+    public String getDialogueId() {
+        return "test_rpc";
+    }
 
+    /**
+     * Вызывается СЕРВЕРОМ, когда игрок нажимает кнопку «Разговор» в главном меню взаимодействия.
+     */
+    public void startServerDialogue(net.minecraft.world.entity.player.Player player) {
+        if (this.level().isClientSide) return;
+
+        // Базовые проверки (NPC жив и рядом)
+        if (!this.isAlive() || this.distanceToSqr(player) > 64.0D) return;
+
+        // Загружаем стартовый узел "start" из нашего DialogueManager
+        com.questnpc.dialogue.DialogueNode startNode = com.questnpc.dialogue.DialogueManager.getDialogueNode(this.getDialogueId(), "start");
+
+        if (startNode != null) {
+            // Отправляем пакет клиенту, чтобы открыть экран диалога с первыми репликами
+            com.questnpc.network.ModNetwork.INSTANCE.send(
+                    net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> (net.minecraft.server.level.ServerPlayer) player),
+                    new com.questnpc.network.DialogueSyncPacket(this.getId(), startNode)
+            );
+            QuestNPCLogger.debug("Сервер запустил диалог '{}' для игрока {}", this.getDialogueId(), player.getName().getString());
+        } else {
+            player.displayClientMessage(net.minecraft.network.chat.Component.literal("§cОшибка: Стартовый диалог не найден!"), true);
+        }
+    }
+
+    /**
+     * Вызывается СЕРВЕРОМ, когда игрок выбирает вариант ответа в окне диалога.
+     */
+    public void handleDialogueChoice(net.minecraft.world.entity.player.Player player, String nextNodeId, String action) {
+        if (this.level().isClientSide) return;
+
+        // Защитная проверка дистанции
+        if (!this.isAlive() || this.distanceToSqr(player) > 64.0D) return;
+
+        // 1. ОБРАБОТКА ДЕЙСТВИЙ (Action)
+        // Здесь мы будем перехватывать триггеры из JSON (выдача квеста, предметов и т.д.)
+        if (action != null && !action.isEmpty()) {
+            QuestNPCLogger.debug("Диалог NPC выполняет действие: " + action);
+
+            if (action.equalsIgnoreCase("start_iron_quest")) {
+                // Пример заглушки под будущую систему квестов
+                player.displayClientMessage(net.minecraft.network.chat.Component.literal("§6[Квесты] §aВы получили задание от NPC!"), false);
+            }
+        }
+
+        // 2. ПЕРЕХОД К СЛЕДУЮЩЕМУ УЗЛУ
+        // Если ID следующего узла "close" или вариантов ответа больше нет — закрываем контейнеры
+        if (nextNodeId.equalsIgnoreCase("close") || nextNodeId.isEmpty()) {
+            player.closeContainer(); // Закроет экран на клиенте автоматически
+            QuestNPCLogger.debug("Диалог с игроком {} завершен.", player.getName().getString());
+            return;
+        }
+
+        // Пытаемся получить следующий узел из менеджера
+        com.questnpc.dialogue.DialogueNode nextNode = com.questnpc.dialogue.DialogueManager.getDialogueNode(this.getDialogueId(), nextNodeId);
+
+        if (nextNode != null) {
+            // Отправляем клиенту обновленные данные (экран не закроется, а просто обновит текст и кнопки!)
+            com.questnpc.network.ModNetwork.INSTANCE.send(
+                    net.minecraftforge.network.PacketDistributor.PLAYER.with(() -> (net.minecraft.server.level.ServerPlayer) player),
+                    new com.questnpc.network.DialogueSyncPacket(this.getId(), nextNode)
+            );
+        } else {
+            // Если узел сломан или опечатка в JSON — аккуратно закрываем во избежание зависания интерфейса
+            player.closeContainer();
+            QuestNPCLogger.error("Игрок запросил несуществующий узел диалога: " + nextNodeId);
+        }
+    }
     public void restockAllTrades() {
         for (TradeSet set : this.tradeSets) {
             for (int i = 0; i < set.offers.size(); i++) {

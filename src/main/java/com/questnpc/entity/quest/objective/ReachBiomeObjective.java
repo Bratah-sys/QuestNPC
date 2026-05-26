@@ -38,4 +38,14 @@ public class ReachBiomeObjective extends QuestObjective {
                 ? ResourceLocation.tryParse(tag.getString("BiomeId"))
                 : null;
     }
+
+    // === НОВЫЙ МЕТОД Добавлен здесь ===
+    public boolean matches(net.minecraft.server.level.ServerPlayer player) {
+        if (biomeId == null) return false;
+        // Проверяем, совпадает ли ID биома, в котором стоит игрок, с нужным
+        return player.serverLevel().getBiome(player.blockPosition())
+                .unwrapKey()
+                .map(key -> key.location().equals(biomeId))
+                .orElse(false);
+    }
 }

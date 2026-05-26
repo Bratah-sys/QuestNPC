@@ -3,6 +3,7 @@ package com.questnpc.client.gui;
 import com.questnpc.entity.QuestNPCEntity;
 import com.questnpc.network.ModNetwork;
 import com.questnpc.network.OpenNPCTradePacket;
+import com.questnpc.network.RequestDialoguePacket;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.client.gui.components.Button;
 import net.minecraft.client.gui.screens.Screen;
@@ -58,10 +59,10 @@ public class NPCInteractionScreen extends Screen {
         // ==========================================
         // 3. КНОПКА ДИАЛОГОВ
         // ==========================================
-        Button dialogueButton = Button.builder(Component.literal("Диалог"), button -> {
+        Button dialogueButton = Button.builder(Component.literal("Разговор"), button -> {
             if (this.minecraft.player != null) {
-                this.minecraft.player.sendSystemMessage(Component.literal("§3[Диалог] §fСистема диалогов в разработке..."));
-                this.onClose(); // Здесь тоже оставляем закрытие
+                // Шлем пакет-запрос на сервер, экран сам закроется/сменится сервером
+                ModNetwork.INSTANCE.sendToServer(new RequestDialoguePacket(npc.getId()));
             }
         }).bounds(startX, startY + spacing * 2, buttonWidth, buttonHeight).build();
         this.addRenderableWidget(dialogueButton);

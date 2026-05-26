@@ -52,8 +52,14 @@ public class KillObjective extends QuestObjective {
     public void setLootDrop(ItemStack v) { this.lootDrop = v != null ? v : ItemStack.EMPTY; }
 
     /** Этап 5 stub: всегда {@code false}. */
+// Замените старый метод matches на этот:
     public boolean matches(Entity killed) {
-        // TODO Stage 5: реальная проверка через type id / tag
+        if (tagMode && entityTypeTag != null) {
+            return killed.getType().is(entityTypeTag);
+        } else if (!tagMode && entityType != null) {
+            ResourceLocation killedId = net.minecraftforge.registries.ForgeRegistries.ENTITY_TYPES.getKey(killed.getType());
+            return killedId != null && killedId.equals(entityType);
+        }
         return false;
     }
 
