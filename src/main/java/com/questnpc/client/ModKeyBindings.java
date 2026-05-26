@@ -37,12 +37,21 @@ public class ModKeyBindings {
             "key.categories.questnpc"
     );
 
+    /** Stage 8 (v2.9.8): открыть Player Quest Journal экран. */
+    public static final KeyMapping OPEN_JOURNAL = new KeyMapping(
+            "key.questnpc.open_journal",
+            InputConstants.Type.KEYSYM,
+            GLFW.GLFW_KEY_L,
+            "key.categories.questnpc"
+    );
+
     /**
      * Регистрация кейбиндов. Вызывается из mod bus.
      */
     public static void register(RegisterKeyMappingsEvent event) {
         event.register(RECALCULATE_ZONE);
         event.register(OPEN_QUEST_BOOK);
+        event.register(OPEN_JOURNAL);
         QuestNPCLogger.info("Кейбинды QuestNPC зарегистрированы");
     }
 
@@ -93,5 +102,25 @@ public class ModKeyBindings {
                     true
             );
         }
+
+        // Stage 8 (v2.9.8): открыть Player Quest Journal.
+        while (OPEN_JOURNAL.consumeClick()) {
+            if (mc.screen == null) {
+                // Если кэш пустой — запросим refresh, экран сам покажет «Загрузка...».
+                if (!com.questnpc.client.ClientJournalCache.get().isInitialised()) {
+                    com.questnpc.network.ModNetwork.INSTANCE.sendToServer(
+                            new com.questnpc.network.RequestJournalRefreshPacket());
+                }
+                mc.setScreen(new com.questnpc.client.gui.PlayerQuestJournalScreen());
+            }
+        }
+    }
+
+    /**
+     * Stage 8 (v2.9.8): очистка клиентского кэша journal'а при выходе из мира.
+     */
+    @SubscribeEvent
+    public static void onClientLoggedOut(net.minecraftforge.client.event.ClientPlayerNetworkEvent.LoggingOut event) {
+        com.questnpc.client.ClientJournalCache.get().clear();
     }
 }
