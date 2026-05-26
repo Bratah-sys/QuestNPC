@@ -233,6 +233,9 @@
   "gui.questnpc.quests.objective.kill.loot_drop.empty": "Not selected",
   "gui.questnpc.quests.objective.kill.loot_drop.tooltip": "Drops when killing target with active quest",
 
+  "gui.questnpc.quests.objective.bring.drop_source.toggle": "Source mob",
+  "gui.questnpc.quests.objective.bring.drop_source.tooltip": "Mob that drops the item while quest is active",
+
   "gui.questnpc.quests.rewards.section": "REWARDS",
   "gui.questnpc.quests.rewards.add": "+ Add reward",
   "gui.questnpc.quests.rewards.type.ITEM": "Item",

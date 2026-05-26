@@ -4,8 +4,13 @@ import com.questnpc.entity.quest.ObjectiveType;
 import com.questnpc.entity.quest.QuestObjective;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.Tag;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+import net.minecraftforge.registries.ForgeRegistries;
+
+import javax.annotation.Nullable;
 
 /**
  * Цель «принести/иметь N предметов».
@@ -17,6 +22,12 @@ public class BringObjective extends QuestObjective {
     private ItemStack stack = ItemStack.EMPTY;
     private int count = 1;
     private boolean consumeOnTurnIn = true;
+    /**
+     * Stage 7.5 (v2.9.7): опциональный источник дропа — пока квест активен и stack ещё не
+     * собран до {@link #count}, убийство сущности этого типа добавляет 1 копию {@link #stack}
+     * к loot. Реализация через {@link com.questnpc.loot.QuestKillDropModifier} (GLM).
+     */
+    @Nullable private ResourceLocation dropSourceEntityType;
 
     @Override
     public ObjectiveType getType() { return ObjectiveType.BRING; }
@@ -30,6 +41,18 @@ public class BringObjective extends QuestObjective {
     public void setCount(int v) { this.count = Math.max(1, v); }
     public boolean isConsumeOnTurnIn() { return consumeOnTurnIn; }
     public void setConsumeOnTurnIn(boolean v) { this.consumeOnTurnIn = v; }
+    @Nullable public ResourceLocation getDropSourceEntityType() { return dropSourceEntityType; }
+    public void setDropSourceEntityType(@Nullable ResourceLocation v) { this.dropSourceEntityType = v; }
+
+    /**
+     * Stage 7.5 (v2.9.7): проверка — этот моб является {@link #dropSourceEntityType}
+     * для квестового drop'а. Используется в {@link com.questnpc.loot.QuestKillDropModifier}.
+     */
+    public boolean matches(Entity victim) {
+        if (victim == null || dropSourceEntityType == null) return false;
+        ResourceLocation victimId = ForgeRegistries.ENTITY_TYPES.getKey(victim.getType());
+        return dropSourceEntityType.equals(victimId);
+    }
 
     // -------------------------------------------------------------------------
     // Stage 5: реальные методы для server-side проверки на turn-in.
@@ -88,6 +111,10 @@ public class BringObjective extends QuestObjective {
         }
         tag.putInt("Count", count);
         tag.putBoolean("Consume", consumeOnTurnIn);
+        // Stage 7.5 (v2.9.7): сохраняем dropSource только если задан
+        if (dropSourceEntityType != null) {
+            tag.putString("DropSource", dropSourceEntityType.toString());
+        }
     }
 
     @Override
@@ -99,5 +126,9 @@ public class BringObjective extends QuestObjective {
         }
         this.count = Math.max(1, tag.getInt("Count"));
         this.consumeOnTurnIn = tag.contains("Consume") ? tag.getBoolean("Consume") : true;
+        // Stage 7.5 (v2.9.7): загрузка dropSource (backward compat — отсутствие = null)
+        this.dropSourceEntityType = tag.contains("DropSource")
+                ? ResourceLocation.tryParse(tag.getString("DropSource"))
+                : null;
     }
 }

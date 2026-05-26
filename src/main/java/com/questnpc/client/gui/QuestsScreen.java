@@ -139,6 +139,12 @@ public class QuestsScreen extends Screen {
     @Nullable private final EditBox[] rewardEditBoxes = new EditBox[QuestDefinition.MAX_REWARDS];
     @Nullable private final int[][] rewardPickBounds = new int[QuestDefinition.MAX_REWARDS][4];
 
+    // Form scroll state (Stage 7.5 v2.9.7) — offset-based, требует reinit при изменении
+    private int formScrollOffset = 0;
+    private static final int FORM_SCROLL_STEP = 20;
+    /** Высчитывается после buildEditorWidgets — максимальная absolute Y нижнего widget'а. */
+    private int formContentMaxY = 0;
+
     public QuestsScreen(QuestNPCEntity npc,
                         Screen parentScreen,
                         boolean initialEnabled,
@@ -258,7 +264,10 @@ public class QuestsScreen extends Screen {
     private void buildEditorWidgets(int formX, int formY) {
         QuestDefinition q = pendingQuests.get(selectedIndex);
         int formW = PANEL_WIDTH - LIST_WIDTH - PADDING * 2 - 6;
-        int y = formY;
+        // Stage 7.5 (v2.9.7): scroll — смещаем y на -formScrollOffset. Все widgets ниже
+        // используют этот y, поэтому смещение применяется ко всему form-контенту автоматически.
+        // deleteQuestBtn рендерится по абсолютному formY (всегда в верхнем правом углу).
+        int y = formY - formScrollOffset;
 
         // ── «Удалить квест» — v2.9.3: переехала в верхний-правый угол формы ──
         boolean isConfirm = (deleteConfirmIndex == selectedIndex);
@@ -320,11 +329,49 @@ public class QuestsScreen extends Screen {
         // Секция «УСЛОВИЯ ВЫДАЧИ» (v2.9.3) — collapse-toggle + строки
         int prereqY = afterRewardsY + 6;
         buildPrerequisitesSection(formX + 4, prereqY, formW - 8, q);
+
+        // Stage 7.5 (v2.9.7): пересчёт высоты form-контента для clamp scroll'а.
+        // Итерируем все widgets и находим максимальный bottom (y + height).
+        int maxBottom = formY;
+        for (var ch : this.children()) {
+            if (ch instanceof net.minecraft.client.gui.components.AbstractWidget aw) {
+                int bottom = aw.getY() + aw.getHeight();
+                if (bottom > maxBottom) maxBottom = bottom;
+            }
+        }
+        // Конвертируем в absolute Y (без offset) — для maxScroll расчёта в mouseScrolled
+        this.formContentMaxY = maxBottom + formScrollOffset;
+    }
+
+    /**
+     * Stage 7.5 (v2.9.7): вертикальный scroll правой панели через колесо мыши.
+     * Активен только когда курсор в form area. Использует {@link #formScrollOffset} +
+     * {@link #reinit()} (offset-based pattern из NPCTradingScreen).
+     */
+    @Override
+    public boolean mouseScrolled(double mouseX, double mouseY, double delta) {
+        int formLeft = panelX + PADDING + FORM_X_OFFSET;
+        int formRight = panelX + PANEL_WIDTH - PADDING;
+        int formTop = panelY + LIST_Y_OFFSET;
+        int formBottom = panelY + PANEL_HEIGHT - 26;
+        if (mouseX >= formLeft && mouseX < formRight && mouseY >= formTop && mouseY < formBottom) {
+            int visibleH = formBottom - formTop;
+            int maxScroll = Math.max(0, formContentMaxY - formTop - visibleH);
+            int newOffset = formScrollOffset - (int)(delta * FORM_SCROLL_STEP);
+            newOffset = Math.max(0, Math.min(newOffset, maxScroll));
+            if (newOffset != formScrollOffset) {
+                formScrollOffset = newOffset;
+                reinit();
+            }
+            return true;
+        }
+        return super.mouseScrolled(mouseX, mouseY, delta);
     }
 
     /** Stage 7: KILL row требует доп. высоту для lootDrop второй строкой. */
     private static int rowHeightForObjective(QuestObjective obj) {
         if (obj instanceof KillObjective) return OBJ_ROW_H + 20;
+        if (obj instanceof BringObjective) return OBJ_ROW_H + 20; // Stage 7.5: вторая строка для dropSource
         return OBJ_ROW_H;
     }
 
@@ -894,6 +941,53 @@ public class QuestsScreen extends Screen {
                 btn -> { bo.setConsumeOnTurnIn(!bo.isConsumeOnTurnIn()); reinit(); }
         )).setTooltip(Tooltip.create(
                 Component.translatable("gui.questnpc.quests.objective.consume")));
+
+        // Stage 7.5 (v2.9.7): вторая строка — toggle «Источник» + entity picker
+        renderBringSourceFields(bo, slotIdx, x, y + 20, w);
+    }
+
+    /**
+     * Stage 7.5 (v2.9.7): UI для BringObjective.dropSourceEntityType — quest-locked
+     * source-drop через GLM. Аналог {@link #renderLootDropFields} для KillObjective.
+     */
+    private void renderBringSourceFields(BringObjective bo, int slotIdx, int x, int y, int w) {
+        boolean active = bo.getDropSourceEntityType() != null;
+        int toggleW = 80;
+        int gap = 4;
+        int pickW = w - toggleW - gap;
+
+        DarkButton toggleBtn = this.addRenderableWidget(new DarkButton(
+                x, y, toggleW, 16,
+                Component.translatable("gui.questnpc.quests.objective.bring.drop_source.toggle"),
+                btn -> {
+                    if (active) {
+                        bo.setDropSourceEntityType(null);
+                        reinit();
+                    } else {
+                        Minecraft.getInstance().setScreen(new EntityCatalogScreen(
+                                this, null,
+                                picked -> { if (picked != null) bo.setDropSourceEntityType(picked); }
+                        ));
+                    }
+                },
+                active ? NPCMenuScreen.BTN_GREEN_BG : NPCMenuScreen.BTN_GRAY_BG,
+                active ? NPCMenuScreen.BTN_GREEN_HOVER : NPCMenuScreen.BTN_GRAY_HOVER,
+                NPCMenuScreen.TEXT_WHITE
+        ));
+        toggleBtn.setTooltip(Tooltip.create(
+                Component.translatable("gui.questnpc.quests.objective.bring.drop_source.tooltip")));
+
+        Component pickLabel = active
+                ? Component.literal(bo.getDropSourceEntityType().toString())
+                : Component.translatable("gui.questnpc.quests.objective.kill.loot_drop.empty");
+        DarkButton pickBtn = this.addRenderableWidget(new DarkButton(
+                x + toggleW + gap, y, pickW, 16, pickLabel,
+                btn -> Minecraft.getInstance().setScreen(new EntityCatalogScreen(
+                        this, bo.getDropSourceEntityType(),
+                        picked -> { if (picked != null) bo.setDropSourceEntityType(picked); }
+                ))
+        ));
+        pickBtn.active = active;
     }
 
     // ───────────────────────────────────────────

@@ -233,6 +233,9 @@
   "gui.questnpc.quests.objective.kill.loot_drop.empty": "Не выбран",
   "gui.questnpc.quests.objective.kill.loot_drop.tooltip": "Выпадает при убийстве цели с активным квестом",
 
+  "gui.questnpc.quests.objective.bring.drop_source.toggle": "Источник",
+  "gui.questnpc.quests.objective.bring.drop_source.tooltip": "Моб который дропает предмет пока активен квест",
+
   "gui.questnpc.quests.rewards.section": "НАГРАДЫ",
   "gui.questnpc.quests.rewards.add": "+ Добавить награду",
   "gui.questnpc.quests.rewards.type.ITEM": "Предмет",
