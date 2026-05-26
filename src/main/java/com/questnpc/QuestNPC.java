@@ -3,6 +3,10 @@ package com.questnpc;
 import com.questnpc.block.ModBlocks;
 import com.questnpc.client.ModKeyBindings;
 import com.questnpc.client.debug.NPCDebugRenderer;
+import com.questnpc.client.debug.PatrolBrushRenderer;
+import com.questnpc.client.gui.ItemCatalogScreen;
+import com.questnpc.client.model.CustomModelManager;
+import com.questnpc.client.model.CustomModelPackResources;
 import com.questnpc.commands.NpcVisCommand;
 import com.questnpc.entity.ModEntityTypes;
 import com.questnpc.entity.QuestNPCEntity;
@@ -10,15 +14,26 @@ import com.questnpc.item.ModCreativeTabs;
 import com.questnpc.item.ModItems;
 import com.questnpc.events.NPCInteractionHandler;
 import com.questnpc.network.ModNetwork;
+import com.questnpc.network.NPCMenuSessionManager;
+import com.questnpc.network.PatrolPaintSessionManager;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.RegisterCommandsEvent;
+import net.minecraftforge.event.TickEvent;
 import net.minecraftforge.event.entity.EntityAttributeCreationEvent;
+import net.minecraftforge.event.entity.player.PlayerEvent;
 import net.minecraftforge.eventbus.api.IEventBus;
 import net.minecraftforge.eventbus.api.SubscribeEvent;
 import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.event.lifecycle.FMLClientSetupEvent;
 import net.minecraftforge.fml.event.lifecycle.FMLCommonSetupEvent;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
+import net.minecraftforge.client.event.RegisterClientReloadListenersEvent;
+import net.minecraftforge.event.AddPackFindersEvent;
+import net.minecraft.server.packs.PackType;
+import net.minecraft.server.packs.repository.Pack;
+import net.minecraft.server.packs.repository.PackSource;
+import net.minecraft.server.packs.resources.ResourceManagerReloadListener;
+import net.minecraft.network.chat.Component;
 
 /**
  * Главный класс мода QuestNPC.
@@ -28,7 +43,7 @@ import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 public class QuestNPC {
 
     public static final String MOD_ID = "questnpc";
-    public static final String MOD_VERSION = "0.2.2-alpha";
+    public static final String MOD_VERSION = "0.3.1-alpha-menurefactor-v2.9.8-quest-journal";
 
     public QuestNPC() {
         QuestNPCLogger.info("Инициализация мода QuestNPC v{}", MOD_VERSION);
@@ -37,6 +52,8 @@ public class QuestNPC {
         IEventBus modBus = FMLJavaModLoadingContext.get().getModEventBus();
         modBus.addListener(this::onCommonSetup);
         modBus.addListener(this::onClientSetup);
+        modBus.addListener(this::onAddPackFinders);
+        modBus.addListener(this::onRegisterClientReloadListeners);
         modBus.addListener(ModKeyBindings::register);
 
         // Регистрация блоков, предметов, сущностей и креативной вкладки
@@ -44,6 +61,9 @@ public class QuestNPC {
         ModItems.register(modBus);
         ModEntityTypes.register(modBus);
         ModCreativeTabs.register(modBus);
+
+        // Stage 7 (v2.9.6): GLM-сериализаторы для quest-locked drops
+        com.questnpc.loot.ModLootModifiers.register(modBus);
 
         // Регистрация атрибутов сущностей (EntityAttributeCreationEvent — mod bus)
         modBus.addListener(this::onEntityAttributeCreation);
@@ -70,9 +90,47 @@ public class QuestNPC {
             // Регистрация сетевого канала
             ModNetwork.register();
             QuestNPCLogger.info("ModNetwork зарегистрирован");
+
+            // Создание папки кастомных моделей
+            CustomModelManager.getInstance().ensureDirectoryExists();
         });
 
         QuestNPCLogger.info("FMLCommonSetupEvent: общая инициализация завершена");
+    }
+
+    /**
+     * Регистрация кастомного ресурс-пака для загрузки .geo.json моделей из файловой системы.
+     */
+    private void onAddPackFinders(final AddPackFindersEvent event) {
+        if (event.getPackType() != PackType.CLIENT_RESOURCES) return;
+
+        CustomModelManager.getInstance().ensureDirectoryExists();
+
+        event.addRepositorySource(consumer -> {
+            var pack = Pack.readMetaAndCreate(
+                    "questnpc_custom_models",
+                    Component.literal("QuestNPC Custom Models"),
+                    true, // required — всегда активен
+                    id -> new CustomModelPackResources(
+                            CustomModelManager.getInstance().getModelsDirectory()),
+                    PackType.CLIENT_RESOURCES,
+                    Pack.Position.TOP,
+                    PackSource.BUILT_IN
+            );
+            if (pack != null) {
+                consumer.accept(pack);
+                QuestNPCLogger.info("Зарегистрирован ресурс-пак для кастомных моделей");
+            }
+        });
+    }
+
+    /**
+     * v2.5.5 (BUG-009): регистрируем слушатель перезагрузки ресурсов (F3+T),
+     * чтобы инвалидировать статический кэш каталога предметов.
+     */
+    private void onRegisterClientReloadListeners(final RegisterClientReloadListenersEvent event) {
+        event.registerReloadListener((ResourceManagerReloadListener)
+                rm -> ItemCatalogScreen.invalidateCache());
     }
 
     /**
@@ -83,8 +141,9 @@ public class QuestNPC {
 
         // Регистрация дебаг-рендерера на Forge EVENT_BUS (не на mod bus)
         MinecraftForge.EVENT_BUS.register(new NPCDebugRenderer());
-        MinecraftForge.EVENT_BUS.register(new ModKeyBindings());
-        QuestNPCLogger.info("NPCDebugRenderer и кейбинды зарегистрированы");
+        MinecraftForge.EVENT_BUS.register(new PatrolBrushRenderer());
+        // LOW-008: ModKeyBindings уже на FORGE-шине через @Mod.EventBusSubscriber — ручная регистрация не нужна.
+        QuestNPCLogger.info("NPCDebugRenderer и PatrolBrushRenderer зарегистрированы");
 
         QuestNPCLogger.info("FMLClientSetupEvent: клиентская инициализация завершена");
     }
@@ -106,5 +165,37 @@ public class QuestNPC {
         QuestNPCLogger.info("RegisterCommandsEvent: регистрация команд");
         TestModCommand.register(event.getDispatcher());
         NpcVisCommand.register(event.getDispatcher());
+    }
+
+    // -------------------------------------------------------------------------
+    // Серверные сессии NPC-меню: очистка
+    // -------------------------------------------------------------------------
+
+    /** Счётчик тиков для периодической очистки сессий. */
+    private int sessionCleanupCounter = 0;
+
+    /**
+     * Закрывает сессию NPC-меню и paint-сессию при выходе игрока с сервера.
+     */
+    @SubscribeEvent
+    public void onPlayerLoggedOut(PlayerEvent.PlayerLoggedOutEvent event) {
+        NPCMenuSessionManager.getInstance().closeSession(
+                event.getEntity().getUUID(),
+                event.getEntity().getName().getString());
+        PatrolPaintSessionManager.getInstance().closeSession(event.getEntity().getUUID());
+    }
+
+    /**
+     * Периодическая очистка просроченных сессий (каждые ~20 секунд).
+     */
+    @SubscribeEvent
+    public void onServerTick(TickEvent.ServerTickEvent event) {
+        if (event.phase != TickEvent.Phase.END) return;
+        sessionCleanupCounter++;
+        if (sessionCleanupCounter >= NPCMenuSessionManager.CLEANUP_INTERVAL_TICKS) {
+            sessionCleanupCounter = 0;
+            NPCMenuSessionManager.getInstance().cleanupExpiredSessions();
+            PatrolPaintSessionManager.getInstance().cleanupExpiredSessions();
+        }
     }
 }

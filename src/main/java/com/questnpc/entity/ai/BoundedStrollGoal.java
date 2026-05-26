@@ -55,6 +55,11 @@ public class BoundedStrollGoal extends WaterAvoidingRandomStrollGoal {
     /** Запускаемся только при наличии привязки и после истечения кулдауна. */
     @Override
     public boolean canUse() {
+        // Пока активно расписание — патруль не должен запускаться.
+        // Флаговая система уже ставит цель на паузу, но явный ранний выход
+        // предотвращает ненужное сгорание кулдауна.
+        if (mob.isScheduleEnabled() && mob.getActiveScheduleEntry() != null) return false;
+
         if (!mob.isBound()) return false;
 
         // Свой кулдаун вместо стандартного interval
