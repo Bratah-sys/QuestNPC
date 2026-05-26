@@ -117,6 +117,15 @@ public class PlayerQuestProgress implements INBTSerializable<CompoundTag> {
     }
 
     /**
+     * Stage 8 (v2.9.8): timestamp выполнения квеста, 0 если квест не в completed.
+     * Используется для строки «Завершён: %s» в Player Quest Journal.
+     */
+    public long getCompletedAt(QuestKey k) {
+        Long v = completed.get(k);
+        return v != null ? v : 0L;
+    }
+
+    /**
      * Тихо удаляет из active все ключи, которые НЕ присутствуют в {@code validKeys}
      * (decision §2 от 2026-05-25 — no chat notification).
      * Вызывается на login для случая «админ удалил квест/NPC, пока игрок офлайн».
