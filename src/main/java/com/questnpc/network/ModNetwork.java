@@ -10,7 +10,7 @@ import net.minecraftforge.network.simple.SimpleChannel;
  */
 public final class ModNetwork {
 
-    private static final String PROTOCOL_VERSION = "11";
+    private static final String PROTOCOL_VERSION = "12";
 
     public static final SimpleChannel INSTANCE = NetworkRegistry.newSimpleChannel(
             new ResourceLocation(QuestNPC.MOD_ID, "main"),
@@ -199,6 +199,21 @@ public final class ModNetwork {
                 SyncPlayerQuestProgressPacket::encode,
                 SyncPlayerQuestProgressPacket::decode,
                 SyncPlayerQuestProgressPacket::handle
+        );
+        // Stage 8 (v2.9.8): пакеты для Player Quest Journal (ID 25-26).
+        INSTANCE.registerMessage(
+                25,
+                RequestJournalRefreshPacket.class,
+                RequestJournalRefreshPacket::encode,
+                RequestJournalRefreshPacket::decode,
+                RequestJournalRefreshPacket::handle
+        );
+        INSTANCE.registerMessage(
+                26,
+                RequestJournalAbandonPacket.class,
+                RequestJournalAbandonPacket::encode,
+                RequestJournalAbandonPacket::decode,
+                RequestJournalAbandonPacket::handle
         );
     }
 
