@@ -200,6 +200,13 @@ public final class ModNetwork {
                 SyncPlayerQuestProgressPacket::decode,
                 SyncPlayerQuestProgressPacket::handle
         );
+        INSTANCE.registerMessage(
+                25,
+                UpdateNPCDialoguesPacket.class,
+                UpdateNPCDialoguesPacket::encode,
+                UpdateNPCDialoguesPacket::decode,
+                UpdateNPCDialoguesPacket::handle
+        );
     }
 
     private ModNetwork() {}

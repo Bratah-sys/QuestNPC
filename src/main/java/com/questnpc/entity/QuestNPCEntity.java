@@ -132,7 +132,10 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity, Merchant
     public static final int MAX_QUESTS = 20;
     private boolean questsEnabled = false;
     private final List<com.questnpc.entity.quest.QuestDefinition> quests = new ArrayList<>();
-
+    // ═════════════════════ СЕКЦИЯ ДИАЛОГОВ (Magmalce12) ═════════════════════
+    private boolean dialoguesEnabled = false;
+    private String startNodeId = "start";
+    private final java.util.Map<String, com.questnpc.entity.dialogue.DialogueNode> dialogues = new java.util.HashMap<>();
     // --- Per-NPC cache для DistanceToStructureCondition (v2.9.3, runtime-only) ---
     /** TTL кэша ближайшей структуры — 60 секунд (1200 тиков), research §3.7. */
     private static final long STRUCTURE_CACHE_TTL_TICKS = 1200L;
@@ -176,7 +179,36 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity, Merchant
             quests.add(com.questnpc.entity.quest.QuestDefinition.load(src.save()));
         }
     }
+    public boolean isDialoguesEnabled() {
+        return this.dialoguesEnabled;
+    }
 
+    public void setDialoguesEnabled(boolean v) {
+        this.dialoguesEnabled = v;
+    }
+
+    public String getStartNodeId() {
+        return this.startNodeId;
+    }
+
+    public void setStartNodeId(String v) {
+        this.startNodeId = v != null ? v : "start";
+    }
+
+    public java.util.Map<String, com.questnpc.entity.dialogue.DialogueNode> getDialogues() {
+        return java.util.Collections.unmodifiableMap(this.dialogues);
+    }
+
+    public void setDialoguesFromSnapshot(java.util.Collection<com.questnpc.entity.dialogue.DialogueNode> snapshot) {
+        this.dialogues.clear();
+        if (snapshot != null) {
+            for (com.questnpc.entity.dialogue.DialogueNode node : snapshot) {
+                if (node != null && !node.getId().isEmpty()) {
+                    this.dialogues.put(node.getId(), node);
+                }
+            }
+        }
+    }
     /**
      * Возвращает позицию ближайшей структуры данного типа от позиции NPC. Cache-aware:
      * результат держится {@link #STRUCTURE_CACHE_TTL_TICKS} тиков, потом перезапрашивается.
@@ -916,6 +948,15 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity, Merchant
 
     @Override
     public InteractionResult mobInteract(Player player, InteractionHand hand) {
+        if (this.dialoguesEnabled && !this.dialogues.isEmpty() && player.getItemInHand(hand).isEmpty()) {
+            if (!this.level().isClientSide()) {
+                // На Шаге 3 мы заменим это отправкой пакета OpenNPCDialoguePacket (S2C, ID 25)
+                player.sendSystemMessage(net.minecraft.network.chat.Component.literal(
+                        "[Диалог] Начало беседы с узла: " + this.startNodeId
+                ));
+            }
+            return net.minecraft.world.InteractionResult.sidedSuccess(this.level().isClientSide());
+        }
         if (hand != InteractionHand.MAIN_HAND) return InteractionResult.PASS;
 
         // Проверка на палку (админку) — оставляем PASS, чтобы админ-панель открывалась как раньше
@@ -1166,86 +1207,99 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity, Merchant
     public void addAdditionalSaveData(CompoundTag tag) {
         super.addAdditionalSaveData(tag);
 
-        // === НОВЫЙ КОД (Таймер торгов) ===
+        // Таймер торгов
         tag.putLong("LastTick", this.lastTick);
-        // ==================================
 
-        BlockPos bound = getBoundBlockPos();
-        if (bound != null) {
+        // Настройки патруля
+        tag.putDouble("PatrolSpeed", this.patrolSpeed);
+        tag.putInt("PatrolDelayMin", this.patrolDelayMin);
+        tag.putInt("PatrolDelayMax", this.patrolDelayMax);
+
+        // Модель NPC
+        if (getModelEntityType() != null) {
+            tag.putString("ModelEntityType", getModelEntityType());
+        }
+
+        // Торговля
+        tag.putBoolean("TradingEnabled", this.tradingEnabled);
+        ListTag setsTag = new ListTag();
+        for (TradeSet set : this.tradeSets) {
+            CompoundTag setTag = new CompoundTag();
+            setTag.putString("Name", set.name);
+            setTag.put("Offers", set.offers); // Предполагается, что у TradeSet есть поле offers (ListTag)
+            setsTag.add(setTag);
+        }
+        tag.put("TradeSets", setsTag);
+
+        // Блокированные сеты торговли (Stage 6)
+        ListTag lockedTag = new ListTag();
+        for (String lockedName : this.lockedTradeSets) {
+            lockedTag.add(net.minecraft.nbt.StringTag.valueOf(lockedName));
+        }
+        tag.put("LockedTradeSets", lockedTag);
+
+        // Расписание
+        tag.putBoolean("ScheduleEnabled", this.scheduleEnabled);
+        ListTag scheduleTag = new ListTag();
+        for (ScheduleEntry entry : this.schedule) {
+            scheduleTag.add(entry.save()); // Предполагается метод save(), как в NPCInteractionHandler
+        }
+        tag.put("Schedule", scheduleTag);
+
+        // Привязанный блок патруля
+        this.entityData.get(DATA_BOUND_BLOCK).ifPresent(bound -> {
             tag.putInt("BoundBlockX", bound.getX());
             tag.putInt("BoundBlockY", bound.getY());
             tag.putInt("BoundBlockZ", bound.getZ());
-            QuestNPCLogger.debug(
-                    "NPC {}: сохранён привязанный блок [{}, {}, {}]",
-                    this.getId(), bound.getX(), bound.getY(), bound.getZ()
-            );
-        }
-        // Настройки патруля
-        tag.putDouble("PatrolSpeed", patrolSpeed);
-        tag.putInt("PatrolDelayMin", patrolDelayMin);
-        tag.putInt("PatrolDelayMax", patrolDelayMax);
+        });
 
-        // Модель NPC
-        String modelType = getModelEntityType();
-        if (!modelType.isEmpty()) {
-            tag.putString("ModelEntityType", modelType);
-        }
-
-        // Торговля — новый формат: список именованных наборов
-        tag.putBoolean("TradingEnabled", tradingEnabled);
-        if (!tradeSets.isEmpty()) {
-            ListTag setsTag = new ListTag();
-            for (TradeSet set : tradeSets) {
-                CompoundTag setTag = new CompoundTag();
-                setTag.putString("Name", set.name != null ? set.name : DEFAULT_TRADE_SET_NAME);
-                setTag.put("Offers", set.offers != null ? set.offers : new ListTag());
-                setsTag.add(setTag);
+        // Экипировка (v2.8.0)
+        CompoundTag eq = new CompoundTag();
+        String[] keys = {"Head", "Chest", "Legs", "Feet"};
+        boolean hasEquipment = false;
+        for (int i = 0; i < EQUIPMENT_SLOTS; i++) {
+            if (this.equipment[i] != null && !this.equipment[i].isEmpty()) {
+                eq.put(keys[i], this.equipment[i].save(new CompoundTag()));
+                hasEquipment = true;
             }
-            tag.put("TradeSets", setsTag);
         }
-
-        // Stage 6 (v2.9.5): сохраняем locked сеты только если непусто (backward compat)
-        if (!lockedTradeSets.isEmpty()) {
-            ListTag lockedTag = new ListTag();
-            for (String name : lockedTradeSets) {
-                lockedTag.add(net.minecraft.nbt.StringTag.valueOf(name));
-            }
-            tag.put("LockedTradeSets", lockedTag);
-        }
-
-        // Расписание
-        tag.putBoolean("ScheduleEnabled", scheduleEnabled);
-        if (!schedule.isEmpty()) {
-            ListTag scheduleTag = new ListTag();
-            for (ScheduleEntry e : schedule) {
-                scheduleTag.add(e.save());
-            }
-            tag.put("Schedule", scheduleTag);
-        }
-
-        // Экипировка (v2.8.0): кастомный CompoundTag, НЕ vanilla armorItems.
-        boolean anyEquipped = false;
-        for (ItemStack s : equipment) if (!s.isEmpty()) { anyEquipped = true; break; }
-        if (anyEquipped) {
-            CompoundTag eq = new CompoundTag();
-            String[] keys = {"Head", "Chest", "Legs", "Feet"};
-            for (int i = 0; i < EQUIPMENT_SLOTS; i++) {
-                if (!equipment[i].isEmpty()) {
-                    eq.put(keys[i], equipment[i].save(new CompoundTag()));
-                }
-            }
+        if (hasEquipment) {
             tag.put("Equipment", eq);
         }
 
-        // Квесты (v2.9.0 foundation) — research §3.4.
-        tag.putBoolean("QuestsEnabled", questsEnabled);
-        if (!quests.isEmpty()) {
-            ListTag questsList = new ListTag();
-            for (com.questnpc.entity.quest.QuestDefinition q : quests) {
-                questsList.add(q.save());
-            }
-            tag.put("Quests", questsList);
+        // Квесты (v2.9.0)
+        tag.putBoolean("QuestsEnabled", this.questsEnabled);
+        ListTag questList = new ListTag();
+        for (com.questnpc.entity.quest.QuestDefinition q : this.quests) {
+            questList.add(q.save());
         }
+        tag.put("Quests", questList);
+
+        // ═════════════════════ СЕКЦИЯ ДИАЛОГОВ (MagmaIce12) ═════════════════════
+        tag.putBoolean("DialoguesEnabled", this.dialoguesEnabled);
+        tag.putString("StartNodeId", this.startNodeId != null ? this.startNodeId : "start");
+
+        ListTag dialogueList = new ListTag();
+        for (com.questnpc.entity.dialogue.DialogueNode node : this.dialogues.values()) {
+            CompoundTag nodeTag = new CompoundTag();
+            nodeTag.putString("Id", node.getId());
+            nodeTag.putString("NpcText", node.getNpcText());
+
+            if (node.getOptions() != null && !node.getOptions().isEmpty()) {
+                ListTag optionList = new ListTag();
+                for (com.questnpc.entity.dialogue.DialogueOption opt : node.getOptions()) {
+                    CompoundTag optTag = new CompoundTag();
+                    optTag.putString("Text", opt.getText());
+                    optTag.putString("NextNodeId", opt.getNextNodeId());
+                    optTag.putString("Action", opt.getAction());
+                    optionList.add(optTag);
+                }
+                nodeTag.put("Options", optionList);
+            }
+            dialogueList.add(nodeTag);
+        }
+        tag.put("Dialogues", dialogueList);
+        // ════════════════════════════════════════════════════════════════════════
     }
 
     @Override
@@ -1379,5 +1433,42 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity, Merchant
                 }
             }
         }
+
+        // ═════════════════════ СЕКЦИЯ ДИАЛОГОВ (MagmaIce12) ═════════════════════
+        if (tag.contains("DialoguesEnabled")) {
+            this.dialoguesEnabled = tag.getBoolean("DialoguesEnabled");
+        }
+        this.startNodeId = tag.contains("StartNodeId", Tag.TAG_STRING)
+                ? tag.getString("StartNodeId")
+                : "start";
+
+        this.dialogues.clear();
+        if (tag.contains("Dialogues", Tag.TAG_LIST)) {
+            ListTag dialogueList = tag.getList("Dialogues", Tag.TAG_COMPOUND);
+            for (int i = 0; i < dialogueList.size(); i++) {
+                CompoundTag nodeTag = dialogueList.getCompound(i);
+                com.questnpc.entity.dialogue.DialogueNode node = new com.questnpc.entity.dialogue.DialogueNode(
+                        nodeTag.getString("Id"),
+                        nodeTag.getString("NpcText")
+                );
+
+                if (nodeTag.contains("Options", Tag.TAG_LIST)) {
+                    ListTag optionList = nodeTag.getList("Options", Tag.TAG_COMPOUND);
+                    java.util.List<com.questnpc.entity.dialogue.DialogueOption> options = new java.util.ArrayList<>();
+                    for (int j = 0; j < optionList.size(); j++) {
+                        CompoundTag optTag = optionList.getCompound(j);
+                        options.add(new com.questnpc.entity.dialogue.DialogueOption(
+                                optTag.getString("Text"),
+                                optTag.getString("NextNodeId"),
+                                optTag.getString("Action")
+                        ));
+                    }
+                    node.setOptions(options);
+                }
+                this.dialogues.put(node.getId(), node);
+            }
+        }
+        // ════════════════════════════════════════════════════════════════════════
     }
+
 }

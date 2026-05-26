@@ -23,6 +23,7 @@ import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.entity.Entity;
 import net.minecraft.world.entity.EntityType;
 import net.minecraft.world.entity.LivingEntity;
+import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.registries.ForgeRegistries;
 
 import javax.annotation.Nullable;
@@ -84,6 +85,9 @@ public class NPCMenuScreen extends Screen {
     private boolean deleteConfirm = false;
     private int panelX, panelY;
 
+    private boolean currentDialoguesEnabled;
+    private String currentStartNodeId;
+    private List<CompoundTag> currentDialogues;
     /** true когда переходим на подэкран — подавляет отправку CloseMenuPacket */
     private boolean navigatingToSubScreen = false;
 
@@ -93,12 +97,11 @@ public class NPCMenuScreen extends Screen {
     @Nullable
     private LivingEntity previewEntity;
 
-    public NPCMenuScreen(QuestNPCEntity npc, double speed, int delayMin, int delayMax, String modelType,
-                         boolean tradingEnabled, List<QuestNPCEntity.TradeSet> tradeSets,
-                         List<String> lockedTradeSetNames,
-                         boolean scheduleEnabled, List<CompoundTag> schedule,
-                         net.minecraft.world.item.ItemStack[] equipment,
-                         boolean questsEnabled, List<QuestDefinition> quests) {
+    public NPCMenuScreen(QuestNPCEntity npc, double speed, int delayMin, int delayMax,
+                         String modelType, boolean tradingEnabled, List<QuestNPCEntity.TradeSet> tradeSets,
+                         List<String> lockedTradeSetNames, boolean scheduleEnabled, List<CompoundTag> schedule,
+                         ItemStack[] equipment, boolean questsEnabled, List<QuestDefinition> quests,
+                         boolean dialoguesEnabled, String startNodeId, List<CompoundTag> dialogues) {
         super(Component.translatable("gui.questnpc.menu.title"));
         this.npc = npc;
         this.currentSpeed = speed;
@@ -128,6 +131,9 @@ public class NPCMenuScreen extends Screen {
                 if (q != null) this.currentQuests.add(QuestDefinition.load(q.save()));
             }
         }
+        this.currentDialoguesEnabled = dialoguesEnabled;
+        this.currentStartNodeId = startNodeId;
+        this.currentDialogues = new ArrayList<>(dialogues);
     }
 
     // ═══ Выбор кастомной модели (custom:...) ═══
@@ -246,10 +252,19 @@ public class NPCMenuScreen extends Screen {
                         Minecraft.getInstance().setScreen(new QuestsScreen(
                                 npc, this, currentQuestsEnabled, currentQuests));
                     };
+                } else if (key.equals("gui.questnpc.menu.btn.dialog")) {
+                    action = button -> {
+                        navigatingToSubScreen = true;
+                        Minecraft.getInstance().setScreen(new com.questnpc.client.gui.NPCDialoguesScreen(
+                                this,
+                                currentDialoguesEnabled,
+                                currentStartNodeId,
+                                currentDialogues
+                        ));
+                    };
                 } else {
                     action = button -> {}; // заглушка
                 }
-
                 this.addRenderableWidget(new DarkButton(
                     btnX, rowY, btnW, btnH,
                     Component.translatable(key), action
@@ -678,5 +693,20 @@ public class NPCMenuScreen extends Screen {
             closeSent = true;
             ModNetwork.INSTANCE.sendToServer(new CloseMenuPacket(npc.getId()));
         }
+    }
+
+    public void setDialoguesSnapshot(boolean enabled, String startNodeId, List<CompoundTag> snapshot) {
+        this.currentDialoguesEnabled = enabled;
+        this.currentStartNodeId = startNodeId;
+        this.currentDialogues = new ArrayList<>(snapshot);
+    }
+
+    // Геттеры для передачи текущего состояния в дочернее окно
+    public boolean isDialoguesEnabled() { return currentDialoguesEnabled; }
+    public String getCurrentStartNodeId() { return currentStartNodeId; }
+    public List<CompoundTag> getCurrentDialogues() { return currentDialogues; }
+
+    public QuestNPCEntity getNpc() {
+        return this.npc;
     }
 }

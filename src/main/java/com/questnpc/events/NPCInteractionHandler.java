@@ -12,6 +12,7 @@ import com.questnpc.network.ScheduleSyncPacket;
 import net.minecraft.core.BlockPos;
 import net.minecraft.core.Direction;
 import net.minecraft.nbt.CompoundTag;
+import net.minecraft.nbt.ListTag;
 import net.minecraft.network.chat.Component;
 
 import java.util.ArrayList;
@@ -62,17 +63,52 @@ public class NPCInteractionHandler {
             scheduleTags.add(e.save());
         }
 
+        // === УПАКОВКА ДИАЛОГОВ ДЛЯ ОТПРАВКИ НА КЛИЕНТ (MagmaIce12) ===
+        List<CompoundTag> serializedDialogues = new ArrayList<>();
+        if (npc.getDialogues() != null) {
+            for (com.questnpc.entity.dialogue.DialogueNode node : npc.getDialogues().values()) {
+                CompoundTag nodeTag = new CompoundTag();
+                nodeTag.putString("Id", node.getId());
+                nodeTag.putString("NpcText", node.getNpcText());
+
+                if (node.getOptions() != null && !node.getOptions().isEmpty()) {
+                    ListTag optionList = new ListTag();
+                    for (com.questnpc.entity.dialogue.DialogueOption opt : node.getOptions()) {
+                        CompoundTag optTag = new CompoundTag();
+                        optTag.putString("Text", opt.getText());
+                        optTag.putString("NextNodeId", opt.getNextNodeId());
+                        optTag.putString("Action", opt.getAction());
+                        optionList.add(optTag);
+                    }
+                    nodeTag.put("Options", optionList);
+                }
+                serializedDialogues.add(nodeTag);
+            }
+        }
+        // =============================================================
+
         // Отправляем S2C-пакет для открытия меню с текущими настройками NPC
         ModNetwork.INSTANCE.send(
                 PacketDistributor.PLAYER.with(() -> player),
-                new OpenNPCMenuPacket(npc.getId(), npc.getPatrolSpeed(),
-                        npc.getPatrolDelayMin(), npc.getPatrolDelayMax(),
+                new OpenNPCMenuPacket(
+                        npc.getId(),
+                        npc.getPatrolSpeed(),
+                        npc.getPatrolDelayMin(),
+                        npc.getPatrolDelayMax(),
                         npc.getModelEntityType(),
-                        npc.getTradingEnabled(), npc.getTradeSets(),
+                        npc.getTradingEnabled(),
+                        npc.getTradeSets(),
                         new java.util.ArrayList<>(npc.getLockedTradeSets()), // v2.9.5
-                        npc.isScheduleEnabled(), scheduleTags,
+                        npc.isScheduleEnabled(),
+                        scheduleTags,
                         npc.copyEquipmentSnapshot(),
-                        npc.isQuestsEnabled(), npc.getQuests())
+                        npc.isQuestsEnabled(),
+                        npc.getQuests(),
+                        // Вставляем 3 новых параметра диалогов в самый конец
+                        npc.isDialoguesEnabled(),
+                        npc.getStartNodeId(),
+                        serializedDialogues
+                )
         );
         event.setCanceled(true);
         event.setCancellationResult(InteractionResult.SUCCESS);
@@ -122,14 +158,11 @@ public class NPCInteractionHandler {
         npc.setBoundBlockPos(center);
         npc.activatePatrol();
 
-        // Инвалидация кэша визуализации
-        // Клиенты инвалидируют кэш при смене boundBlock через SynchedEntityData
-
         QuestNPCLogger.info("Игрок {} установил точку патруля NPC {} на [{}, {}, {}] (грань: {})",
                 player.getName().getString(), npc.getId(),
                 center.getX(), center.getY(), center.getZ(), face);
 
-        // Спец-палка превращается обратно в чистую обычную палку (замена стека целиком)
+        // Спец-палка превращается обратно в чистую обычную палку
         player.setItemInHand(InteractionHand.MAIN_HAND, new ItemStack(Items.STICK));
 
         // Сообщение
@@ -139,10 +172,6 @@ public class NPCInteractionHandler {
         event.setCanceled(true);
         event.setCancellationResult(InteractionResult.SUCCESS);
     }
-
-    // -------------------------------------------------------------------------
-    // v2.6.0: ЛКМ по блоку с кистью в руках → завершение рисования зоны патруля
-    // -------------------------------------------------------------------------
 
     @SubscribeEvent
     public void onLeftClickBlock(PlayerInteractEvent.LeftClickBlock event) {
@@ -155,18 +184,11 @@ public class NPCInteractionHandler {
         event.setCancellationResult(InteractionResult.SUCCESS);
         event.setUseBlock(net.minecraftforge.eventbus.api.Event.Result.DENY);
 
-        // Пакет отправляет только клиент — на сервере Forge эмитит этот event дважды иначе
         if (event.getLevel().isClientSide()) {
             ModNetwork.INSTANCE.sendToServer(new FinishPatrolPaintPacket());
         }
     }
 
-    /**
-     * v2.6.2: защита от creative instant-break. В Creative mode ЛКМ ломает блок мгновенно
-     * через {@link net.minecraft.network.protocol.game.ServerboundPlayerActionPacket} на сервере,
-     * минуя обычный MINING-цикл. {@link PlayerInteractEvent.LeftClickBlock#setCanceled} не всегда
-     * успевает — поэтому дополнительно отменяем сам {@link BlockEvent.BreakEvent}.
-     */
     @SubscribeEvent
     public void onBlockBreak(BlockEvent.BreakEvent event) {
         if (event.getPlayer() == null) return;
@@ -175,10 +197,6 @@ public class NPCInteractionHandler {
             event.setCanceled(true);
         }
     }
-
-    // -------------------------------------------------------------------------
-    // v2.6.0: при начале трекинга NPC — шлём клиенту snapshot расписания для /npc_vis
-    // -------------------------------------------------------------------------
 
     @SubscribeEvent
     public void onStartTracking(PlayerEvent.StartTracking event) {
