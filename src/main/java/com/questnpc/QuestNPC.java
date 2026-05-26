@@ -62,6 +62,9 @@ public class QuestNPC {
         ModEntityTypes.register(modBus);
         ModCreativeTabs.register(modBus);
 
+        // Stage 7 (v2.9.6): GLM-сериализаторы для quest-locked drops
+        com.questnpc.loot.ModLootModifiers.register(modBus);
+
         // Регистрация атрибутов сущностей (EntityAttributeCreationEvent — mod bus)
         modBus.addListener(this::onEntityAttributeCreation);
 

@@ -229,6 +229,22 @@
   "gui.questnpc.quests.prerequisites.structure.not_selected": "Not selected",
   "gui.questnpc.quests.prerequisites.future_type_tooltip": "Available in future iterations",
 
+  "gui.questnpc.quests.objective.kill.loot_drop.toggle": "Quest drop",
+  "gui.questnpc.quests.objective.kill.loot_drop.empty": "Not selected",
+  "gui.questnpc.quests.objective.kill.loot_drop.tooltip": "Drops when killing target with active quest",
+
+  "gui.questnpc.quests.rewards.section": "REWARDS",
+  "gui.questnpc.quests.rewards.add": "+ Add reward",
+  "gui.questnpc.quests.rewards.type.ITEM": "Item",
+  "gui.questnpc.quests.rewards.type.XP_POINTS": "XP",
+  "gui.questnpc.quests.rewards.type.COMMAND": "Command",
+  "gui.questnpc.quests.rewards.type.UNLOCK_TRADE_SET": "Unlock set",
+  "gui.questnpc.quests.rewards.item.tooltip": "Click to pick item",
+  "gui.questnpc.quests.rewards.xp.label": "XP",
+  "gui.questnpc.quests.rewards.command.placeholder": "/give @p ...",
+  "gui.questnpc.quests.rewards.command.tooltip": "Placeholders: @p, {player}, {npc}, {quest_id}",
+  "gui.questnpc.quests.rewards.unlock.tooltip": "Trade set name to unlock on turn-in",
+
   "gui.questnpc.player_quest.title": "Quests of %s",
   "gui.questnpc.player_quest.tab.offerable": "Available (%d)",
   "gui.questnpc.player_quest.tab.active": "Active (%d)",

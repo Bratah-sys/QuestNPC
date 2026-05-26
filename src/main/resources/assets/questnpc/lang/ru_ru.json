@@ -229,6 +229,22 @@
   "gui.questnpc.quests.prerequisites.structure.not_selected": "Не выбрана",
   "gui.questnpc.quests.prerequisites.future_type_tooltip": "Доступно в будущих итерациях",
 
+  "gui.questnpc.quests.objective.kill.loot_drop.toggle": "Quest-дроп",
+  "gui.questnpc.quests.objective.kill.loot_drop.empty": "Не выбран",
+  "gui.questnpc.quests.objective.kill.loot_drop.tooltip": "Выпадает при убийстве цели с активным квестом",
+
+  "gui.questnpc.quests.rewards.section": "НАГРАДЫ",
+  "gui.questnpc.quests.rewards.add": "+ Добавить награду",
+  "gui.questnpc.quests.rewards.type.ITEM": "Предмет",
+  "gui.questnpc.quests.rewards.type.XP_POINTS": "Опыт",
+  "gui.questnpc.quests.rewards.type.COMMAND": "Команда",
+  "gui.questnpc.quests.rewards.type.UNLOCK_TRADE_SET": "Разб. сделок",
+  "gui.questnpc.quests.rewards.item.tooltip": "Кликни чтобы выбрать предмет",
+  "gui.questnpc.quests.rewards.xp.label": "опыта",
+  "gui.questnpc.quests.rewards.command.placeholder": "/give @p ...",
+  "gui.questnpc.quests.rewards.command.tooltip": "Плейсхолдеры: @p, {player}, {npc}, {quest_id}",
+  "gui.questnpc.quests.rewards.unlock.tooltip": "Имя набора сделок для разблокировки",
+
   "gui.questnpc.player_quest.title": "Квесты NPC: %s",
   "gui.questnpc.player_quest.tab.offerable": "Доступные (%d)",
   "gui.questnpc.player_quest.tab.active": "Активные (%d)",

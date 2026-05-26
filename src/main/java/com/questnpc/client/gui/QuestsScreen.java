@@ -13,6 +13,12 @@ import com.questnpc.entity.quest.ObjectiveType;
 import com.questnpc.entity.quest.QuestCondition;
 import com.questnpc.entity.quest.QuestDefinition;
 import com.questnpc.entity.quest.QuestObjective;
+import com.questnpc.entity.quest.QuestReward;
+import com.questnpc.entity.quest.RewardType;
+import com.questnpc.entity.quest.reward.CommandReward;
+import com.questnpc.entity.quest.reward.ItemReward;
+import com.questnpc.entity.quest.reward.UnlockTradeSetReward;
+import com.questnpc.entity.quest.reward.XPPointsReward;
 import com.questnpc.entity.quest.condition.DistanceToStructureCondition;
 import com.questnpc.entity.quest.objective.BreakBlockObjective;
 import com.questnpc.entity.quest.objective.BringObjective;
@@ -125,6 +131,13 @@ public class QuestsScreen extends Screen {
     private boolean prerequisitesExpanded = false;
     @Nullable private final EditBox[] prereqMinDistanceBoxes = new EditBox[QuestDefinition.MAX_PREREQUISITES];
     @Nullable private final int[][] prereqPickBounds = new int[QuestDefinition.MAX_PREREQUISITES][4];
+
+    // Rewards widget cache (Stage 7 v2.9.6)
+    private boolean rewardsExpanded = false;
+    private static final int REWARDS_VISIBLE = 3;
+    private static final int REWARD_ROW_H = 22;
+    @Nullable private final EditBox[] rewardEditBoxes = new EditBox[QuestDefinition.MAX_REWARDS];
+    @Nullable private final int[][] rewardPickBounds = new int[QuestDefinition.MAX_REWARDS][4];
 
     public QuestsScreen(QuestNPCEntity npc,
                         Screen parentScreen,
@@ -285,21 +298,233 @@ public class QuestsScreen extends Screen {
             objCountBoxes[i] = null;
             objPickBounds[i] = new int[]{-1, -1, 0, 0};
         }
+        // Stage 7 (v2.9.6): KILL row выше на 20 px для lootDrop UI второй строкой
+        int rowY = y;
         for (int i = 0; i < objCount; i++) {
-            buildObjectiveRow(formX + 4, y + i * OBJ_ROW_H, formW - 8, i, objectives.get(i));
+            buildObjectiveRow(formX + 4, rowY, formW - 8, i, objectives.get(i));
+            rowY += rowHeightForObjective(objectives.get(i));
         }
 
         addObjectiveBtn = this.addRenderableWidget(new DarkButton(
-                formX + 4, y + objCount * OBJ_ROW_H + 2, formW - 8, 14,
+                formX + 4, rowY + 2, formW - 8, 14,
                 Component.translatable("gui.questnpc.quests.add_objective"),
                 btn -> addNewObjective(),
                 NPCMenuScreen.BTN_GREEN_BG, NPCMenuScreen.BTN_GREEN_HOVER, 0xFFFFFFFF
         ));
         addObjectiveBtn.active = objectives.size() < QuestDefinition.MAX_OBJECTIVES;
 
+        // Секция «НАГРАДЫ» (Stage 7 v2.9.6) — между «ЦЕЛИ» и «УСЛОВИЯ»
+        int rewardsY = rowY + 22;
+        int afterRewardsY = buildRewardsSection(formX + 4, rewardsY, formW - 8, q);
+
         // Секция «УСЛОВИЯ ВЫДАЧИ» (v2.9.3) — collapse-toggle + строки
-        int prereqY = y + objCount * OBJ_ROW_H + 22;
+        int prereqY = afterRewardsY + 6;
         buildPrerequisitesSection(formX + 4, prereqY, formW - 8, q);
+    }
+
+    /** Stage 7: KILL row требует доп. высоту для lootDrop второй строкой. */
+    private static int rowHeightForObjective(QuestObjective obj) {
+        if (obj instanceof KillObjective) return OBJ_ROW_H + 20;
+        return OBJ_ROW_H;
+    }
+
+    // ═══════════════════════════════════════════════════════════════════
+    // Rewards section (Stage 7 v2.9.6) — заглушка, наполнение далее в файле
+    // ═══════════════════════════════════════════════════════════════════
+
+    /**
+     * Stage 7 (v2.9.6): секция «НАГРАДЫ» — collapse-toggle, до {@link #REWARDS_VISIBLE}
+     * видимых строк, «+ Добавить» в конце. Возвращает Y после секции.
+     * Pattern полностью аналогичен {@link #buildPrerequisitesSection}.
+     */
+    private int buildRewardsSection(int x, int y, int w, QuestDefinition q) {
+        // Сброс кэша геометрии reward-строк
+        for (int i = 0; i < QuestDefinition.MAX_REWARDS; i++) {
+            rewardEditBoxes[i] = null;
+            rewardPickBounds[i] = new int[]{-1, -1, 0, 0};
+        }
+
+        // Collapse-toggle header
+        String headerLabel = (rewardsExpanded ? "▼ " : "▶ ")
+                + Component.translatable("gui.questnpc.quests.rewards.section").getString()
+                + " (" + q.getRewards().size() + "/" + QuestDefinition.MAX_REWARDS + ")";
+        this.addRenderableWidget(new DarkButton(
+                x, y, w, 14, Component.literal(headerLabel),
+                btn -> { rewardsExpanded = !rewardsExpanded; reinit(); }
+        ));
+
+        if (!rewardsExpanded) return y + 14;
+
+        // Rows (до REWARDS_VISIBLE)
+        int rowY = y + 16;
+        List<QuestReward> rewards = q.getRewards();
+        int visible = Math.min(rewards.size(), REWARDS_VISIBLE);
+        for (int i = 0; i < visible; i++) {
+            buildRewardRow(x, rowY + i * REWARD_ROW_H, w, i, rewards.get(i));
+        }
+
+        // «+ Добавить награду»
+        int addBtnY = rowY + visible * REWARD_ROW_H + 2;
+        DarkButton addBtn = this.addRenderableWidget(new DarkButton(
+                x, addBtnY, w, 12,
+                Component.translatable("gui.questnpc.quests.rewards.add"),
+                btn -> addNewReward(),
+                NPCMenuScreen.BTN_GRAY_BG, NPCMenuScreen.BTN_GRAY_HOVER, NPCMenuScreen.TEXT_WHITE
+        ));
+        addBtn.active = rewards.size() < QuestDefinition.MAX_REWARDS;
+
+        return addBtnY + 14;
+    }
+
+    private void buildRewardRow(int x, int y, int w, int slotIdx, QuestReward r) {
+        // Type cycler — active, переключает по 4 типам
+        DarkButton typeBtn = this.addRenderableWidget(new DarkButton(
+                x, y, 90, 18,
+                Component.translatable("gui.questnpc.quests.rewards.type." + r.getType().name()),
+                btn -> cycleRewardType(slotIdx),
+                NPCMenuScreen.BTN_GRAY_BG, NPCMenuScreen.BTN_GRAY_HOVER, NPCMenuScreen.TEXT_WHITE
+        ));
+
+        // Delete ✕
+        final int slotIdxFinal = slotIdx;
+        this.addRenderableWidget(new DarkButton(
+                x + w - 20, y, 20, 18, Component.literal("✕"),
+                btn -> removeReward(slotIdxFinal),
+                0xFF7F1D1D, 0xFFB91C1C, 0xFFFFFFFF
+        ));
+
+        // Type-specific fields
+        int fieldsX = x + 94;
+        int fieldsW = w - 90 - 20 - 8;
+
+        if (r instanceof ItemReward ir) {
+            renderItemRewardFields(ir, slotIdx, fieldsX, y, fieldsW);
+        } else if (r instanceof XPPointsReward xr) {
+            renderXpRewardFields(xr, slotIdx, fieldsX, y, fieldsW);
+        } else if (r instanceof CommandReward cr) {
+            renderCommandRewardFields(cr, slotIdx, fieldsX, y, fieldsW);
+        } else if (r instanceof UnlockTradeSetReward ur) {
+            renderUnlockTradeSetRewardFields(ur, slotIdx, fieldsX, y, fieldsW);
+        }
+    }
+
+    private void renderItemRewardFields(ItemReward ir, int slotIdx, int x, int y, int w) {
+        // [pick tile: 70%] [count: 40px]
+        int countW = 40;
+        int pickW = w - countW - 4;
+
+        // Pick item tile
+        ItemStack stack = ir.getStack();
+        Component pickLabel = stack.isEmpty()
+                ? Component.translatable("gui.questnpc.quests.objective.kill.loot_drop.empty")
+                : stack.getHoverName();
+        int pickX = x;
+        DarkButton pickBtn = this.addRenderableWidget(new DarkButton(
+                pickX, y, pickW, 18, pickLabel,
+                btn -> {
+                    net.minecraft.world.item.Item current = stack.isEmpty() ? null : stack.getItem();
+                    int currentCount = stack.isEmpty() ? 1 : stack.getCount();
+                    Minecraft.getInstance().setScreen(new ItemCatalogScreen(
+                            this, current, null,
+                            picked -> { if (picked != null) ir.setStack(new ItemStack(picked, currentCount)); }
+                    ));
+                }
+        ));
+        pickBtn.setTooltip(Tooltip.create(Component.translatable("gui.questnpc.quests.rewards.item.tooltip")));
+        rewardPickBounds[slotIdx] = new int[]{pickX, y, pickW, 18};
+
+        // Count EditBox
+        EditBox countBox = new EditBox(this.font, x + pickW + 4, y + 2, countW, 14,
+                Component.translatable("gui.questnpc.quests.count_field"));
+        countBox.setMaxLength(3);
+        countBox.setValue(stack.isEmpty() ? "1" : String.valueOf(stack.getCount()));
+        countBox.setResponder(text -> {
+            try {
+                int v = Integer.parseInt(text.trim());
+                if (v >= 1 && v <= 999 && !ir.getStack().isEmpty()) {
+                    ItemStack copy = ir.getStack().copy();
+                    copy.setCount(v);
+                    ir.setStack(copy);
+                }
+            } catch (NumberFormatException ignored) {}
+        });
+        countBox.setBordered(true);
+        this.addRenderableWidget(countBox);
+        rewardEditBoxes[slotIdx] = countBox;
+    }
+
+    private void renderXpRewardFields(XPPointsReward xr, int slotIdx, int x, int y, int w) {
+        // [amount: 80px] [label "XP"]
+        int amountW = 80;
+        EditBox box = new EditBox(this.font, x, y + 2, amountW, 14,
+                Component.translatable("gui.questnpc.quests.rewards.xp.label"));
+        box.setMaxLength(6);
+        box.setValue(String.valueOf(xr.getAmount()));
+        box.setResponder(text -> {
+            try {
+                int v = Integer.parseInt(text.trim());
+                if (v >= 0 && v <= 100000) xr.setAmount(v);
+            } catch (NumberFormatException ignored) {}
+        });
+        box.setBordered(true);
+        this.addRenderableWidget(box);
+        rewardEditBoxes[slotIdx] = box;
+    }
+
+    private void renderCommandRewardFields(CommandReward cr, int slotIdx, int x, int y, int w) {
+        // Wide EditBox для команды
+        EditBox box = new EditBox(this.font, x, y + 2, w, 14,
+                Component.translatable("gui.questnpc.quests.rewards.command.placeholder"));
+        box.setMaxLength(200);
+        box.setValue(cr.getCommand());
+        box.setResponder(text -> cr.setCommand(text));
+        box.setBordered(true);
+        box.setHint(Component.translatable("gui.questnpc.quests.rewards.command.placeholder"));
+        box.setTooltip(Tooltip.create(Component.translatable("gui.questnpc.quests.rewards.command.tooltip")));
+        this.addRenderableWidget(box);
+        rewardEditBoxes[slotIdx] = box;
+    }
+
+    private void renderUnlockTradeSetRewardFields(UnlockTradeSetReward ur, int slotIdx, int x, int y, int w) {
+        EditBox box = new EditBox(this.font, x, y + 2, w, 14,
+                Component.translatable("gui.questnpc.quests.rewards.unlock.tooltip"));
+        box.setMaxLength(50);
+        box.setValue(ur.getTradeSetName());
+        box.setResponder(text -> ur.setTradeSetName(text));
+        box.setBordered(true);
+        box.setTooltip(Tooltip.create(Component.translatable("gui.questnpc.quests.rewards.unlock.tooltip")));
+        this.addRenderableWidget(box);
+        rewardEditBoxes[slotIdx] = box;
+    }
+
+    private void cycleRewardType(int slotIdx) {
+        if (selectedIndex < 0) return;
+        QuestDefinition q = pendingQuests.get(selectedIndex);
+        List<QuestReward> rewards = new ArrayList<>(q.getRewards());
+        if (slotIdx < 0 || slotIdx >= rewards.size()) return;
+        RewardType cur = rewards.get(slotIdx).getType();
+        RewardType[] all = RewardType.values();
+        RewardType next = all[(cur.ordinal() + 1) % all.length];
+        rewards.set(slotIdx, QuestReward.createEmpty(next));
+        q.clearRewards();
+        for (QuestReward r : rewards) q.addReward(r);
+        reinit();
+    }
+
+    private void addNewReward() {
+        if (selectedIndex < 0) return;
+        QuestDefinition q = pendingQuests.get(selectedIndex);
+        if (q.getRewards().size() >= QuestDefinition.MAX_REWARDS) return;
+        q.addReward(QuestReward.createEmpty(RewardType.ITEM));
+        reinit();
+    }
+
+    private void removeReward(int slotIdx) {
+        if (selectedIndex < 0) return;
+        QuestDefinition q = pendingQuests.get(selectedIndex);
+        if (slotIdx < 0 || slotIdx >= q.getRewards().size()) return;
+        q.removeReward(slotIdx);
+        reinit();
     }
 
     // ═══════════════════════════════════════════════════════════════════
@@ -560,6 +785,66 @@ public class QuestsScreen extends Screen {
         countBox.setBordered(true);
         this.addRenderableWidget(countBox);
         objCountBoxes[slotIdx] = countBox;
+
+        // Stage 7 (v2.9.6): lootDrop UI — вторая строка под основной
+        renderLootDropFields(ko, slotIdx, x, y + 20, w);
+    }
+
+    /**
+     * Stage 7 (v2.9.6): UI для KillObjective.lootDrop — quest-locked drop через GLM.
+     * Layout: одна строка ~16 px высоты — toggle «Quest-drop» (on/off) + picker tile.
+     * Toggle on с пустым lootDrop → автоматически открываем picker.
+     * Toggle off → setLootDrop(EMPTY).
+     */
+    private void renderLootDropFields(KillObjective ko, int slotIdx, int x, int y, int w) {
+        boolean active = !ko.getLootDrop().isEmpty();
+        int toggleW = 80;
+        int gap = 4;
+        int pickW = w - toggleW - gap;
+
+        // Toggle Quest-drop
+        DarkButton toggleBtn = this.addRenderableWidget(new DarkButton(
+                x, y, toggleW, 16,
+                Component.translatable("gui.questnpc.quests.objective.kill.loot_drop.toggle"),
+                btn -> {
+                    if (active) {
+                        // Сейчас active → выключаем
+                        ko.setLootDrop(ItemStack.EMPTY);
+                        reinit();
+                    } else {
+                        // Включаем → открываем picker сразу
+                        Minecraft.getInstance().setScreen(new ItemCatalogScreen(
+                                this, null, null,
+                                picked -> {
+                                    if (picked != null) ko.setLootDrop(new ItemStack(picked, 1));
+                                }
+                        ));
+                    }
+                },
+                active ? NPCMenuScreen.BTN_GREEN_BG : NPCMenuScreen.BTN_GRAY_BG,
+                active ? NPCMenuScreen.BTN_GREEN_HOVER : NPCMenuScreen.BTN_GRAY_HOVER,
+                NPCMenuScreen.TEXT_WHITE
+        ));
+        toggleBtn.setTooltip(Tooltip.create(
+                Component.translatable("gui.questnpc.quests.objective.kill.loot_drop.tooltip")));
+
+        // Pick tile — отображает выбранный предмет
+        Component pickLabel = active
+                ? ko.getLootDrop().getHoverName()
+                : Component.translatable("gui.questnpc.quests.objective.kill.loot_drop.empty");
+        DarkButton pickBtn = this.addRenderableWidget(new DarkButton(
+                x + toggleW + gap, y, pickW, 16, pickLabel,
+                btn -> {
+                    net.minecraft.world.item.Item current = active ? ko.getLootDrop().getItem() : null;
+                    Minecraft.getInstance().setScreen(new ItemCatalogScreen(
+                            this, current, null,
+                            picked -> {
+                                if (picked != null) ko.setLootDrop(new ItemStack(picked, 1));
+                            }
+                    ));
+                }
+        ));
+        pickBtn.active = active; // disabled пока quest-drop выключен
     }
 
     // ───────────────────────────────────────────
@@ -803,6 +1088,20 @@ public class QuestsScreen extends Screen {
         for (QuestCondition c : q.getPrerequisites()) {
             if (!isConditionValid(c)) return false;
         }
+        // Stage 7 (v2.9.6): rewards валидация. Пустой список наград разрешён —
+        // отвергаем только заполненные но некорректные награды.
+        for (QuestReward r : q.getRewards()) {
+            if (!isRewardValid(r)) return false;
+        }
+        return true;
+    }
+
+    /** Stage 7 (v2.9.6): валидация одной награды по типу. */
+    private boolean isRewardValid(QuestReward r) {
+        if (r instanceof ItemReward ir) return !ir.getStack().isEmpty();
+        if (r instanceof XPPointsReward xr) return xr.getAmount() > 0;
+        if (r instanceof CommandReward cr) return !cr.getCommand().isBlank();
+        if (r instanceof UnlockTradeSetReward ur) return !ur.getTradeSetName().isBlank();
         return true;
     }
 
