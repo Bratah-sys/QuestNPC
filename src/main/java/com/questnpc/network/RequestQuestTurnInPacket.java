@@ -6,6 +6,7 @@ import com.questnpc.entity.QuestNPCEntity;
 import com.questnpc.entity.quest.QuestDefinition;
 import com.questnpc.entity.quest.QuestObjective;
 import com.questnpc.entity.quest.QuestReward;
+import com.questnpc.entity.quest.RewardGrantContext;
 import com.questnpc.entity.quest.objective.BringObjective;
 import com.questnpc.events.QuestChatHelper;
 import net.minecraft.network.FriendlyByteBuf;
@@ -73,8 +74,15 @@ public class RequestQuestTurnInPacket {
                     }
                 }
 
-                // Stage 5: rewards — только chat-stub. Реальная выдача — Этап 6.
+                // Stage 6 (v2.9.5): реальная выдача — grant() сначала, потом chat-feedback.
+                RewardGrantContext grantCtx = new RewardGrantContext(player, npc, finalQuest.getId());
                 for (QuestReward reward : finalQuest.getRewards()) {
+                    try {
+                        reward.grant(grantCtx);
+                    } catch (Exception ex) {
+                        com.questnpc.QuestNPCLogger.warn("Reward grant() threw exception: quest={}, player={}, err={}",
+                                finalQuest.getId(), player.getName().getString(), ex.getMessage());
+                    }
                     QuestChatHelper.sendRewardGranted(player, reward);
                 }
 

@@ -31,6 +31,7 @@ public class OpenNPCMenuPacket {
     private final String modelType;
     private final boolean tradingEnabled;
     private final List<QuestNPCEntity.TradeSet> tradeSets;
+    private final List<String> lockedTradeSetNames; // v2.9.5
     private final boolean scheduleEnabled;
     private final List<CompoundTag> schedule;
     private final ItemStack[] equipment; // v2.8.0: снимок экипировки длиной EQUIPMENT_SLOTS
@@ -39,6 +40,7 @@ public class OpenNPCMenuPacket {
 
     public OpenNPCMenuPacket(int entityId, double speed, int delayMin, int delayMax, String modelType,
                              boolean tradingEnabled, List<QuestNPCEntity.TradeSet> tradeSets,
+                             List<String> lockedTradeSetNames,
                              boolean scheduleEnabled, List<CompoundTag> schedule,
                              ItemStack[] equipment,
                              boolean questsEnabled, List<QuestDefinition> quests) {
@@ -49,6 +51,7 @@ public class OpenNPCMenuPacket {
         this.modelType = modelType != null ? modelType : "";
         this.tradingEnabled = tradingEnabled;
         this.tradeSets = tradeSets != null ? tradeSets : new ArrayList<>();
+        this.lockedTradeSetNames = lockedTradeSetNames != null ? lockedTradeSetNames : new ArrayList<>();
         this.scheduleEnabled = scheduleEnabled;
         this.schedule = schedule != null ? schedule : new ArrayList<>();
         this.equipment = (equipment != null && equipment.length == QuestNPCEntity.EQUIPMENT_SLOTS)
@@ -66,6 +69,7 @@ public class OpenNPCMenuPacket {
         buf.writeUtf(packet.modelType, 256);
         buf.writeBoolean(packet.tradingEnabled);
         UpdateTradeOffersPacket.writeTradeSets(buf, packet.tradeSets);
+        UpdateTradeOffersPacket.writeLockedNames(buf, packet.lockedTradeSetNames);
         buf.writeBoolean(packet.scheduleEnabled);
         int scheduleSize = Math.min(packet.schedule.size(), QuestNPCEntity.MAX_SCHEDULE_ENTRIES);
         buf.writeVarInt(scheduleSize);
@@ -89,6 +93,7 @@ public class OpenNPCMenuPacket {
         String model   = buf.readUtf(256);
         boolean trading = buf.readBoolean();
         List<QuestNPCEntity.TradeSet> sets = UpdateTradeOffersPacket.readTradeSets(buf);
+        List<String> lockedNames = UpdateTradeOffersPacket.readLockedNames(buf);
         boolean scheduleEnabled = buf.readBoolean();
         int scheduleSize = Math.min(buf.readVarInt(), QuestNPCEntity.MAX_SCHEDULE_ENTRIES);
         List<CompoundTag> schedule = new ArrayList<>(scheduleSize);
@@ -103,7 +108,7 @@ public class OpenNPCMenuPacket {
         boolean questsEnabled = buf.readBoolean();
         List<QuestDefinition> quests = UpdateNPCQuestsPacket.readQuests(buf);
         return new OpenNPCMenuPacket(entityId, speed, delayMin, delayMax, model, trading, sets,
-                scheduleEnabled, schedule, equipment, questsEnabled, quests);
+                lockedNames, scheduleEnabled, schedule, equipment, questsEnabled, quests);
     }
 
     public static void handle(OpenNPCMenuPacket packet, Supplier<NetworkEvent.Context> ctx) {
@@ -114,6 +119,7 @@ public class OpenNPCMenuPacket {
             if (entity instanceof QuestNPCEntity npc) {
                 mc.setScreen(new NPCMenuScreen(npc, packet.speed, packet.delayMin, packet.delayMax,
                         packet.modelType, packet.tradingEnabled, packet.tradeSets,
+                        packet.lockedTradeSetNames,
                         packet.scheduleEnabled, packet.schedule, packet.equipment,
                         packet.questsEnabled, packet.quests));
             }

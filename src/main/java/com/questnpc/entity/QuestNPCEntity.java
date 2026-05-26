@@ -100,6 +100,8 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity, Merchant
 
     private boolean tradingEnabled = false;
     private final List<TradeSet> tradeSets = new ArrayList<>();
+    /** Stage 6 (v2.9.5): набор имён TradeSet'ов, которые «заблокированы» — не выдаются по fallback. UnlockTradeSetReward удаляет имя из этого set'а. Пустой = backward compat. */
+    private final java.util.Set<String> lockedTradeSets = new java.util.HashSet<>();
 
     private Player tradingPlayer;
     private MerchantOffers tradeOffers;
@@ -557,6 +559,52 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity, Merchant
         return tradeSets.isEmpty() ? null : tradeSets.get(0);
     }
 
+    /** Stage 6 (v2.9.5): первый TradeSet, который НЕ в {@link #lockedTradeSets}. Используется как fallback в {@link #getActiveTradeOffers}. */
+    @Nullable
+    public TradeSet getFirstUnlockedTradeSet() {
+        for (TradeSet ts : tradeSets) {
+            if (!lockedTradeSets.contains(ts.name)) return ts;
+        }
+        return null;
+    }
+
+    // -------------------------------------------------------------------------
+    // Stage 6 (v2.9.5) — Locked TradeSets
+    // -------------------------------------------------------------------------
+
+    public boolean isTradeSetLocked(String name) {
+        return name != null && lockedTradeSets.contains(name);
+    }
+
+    /** Помечает сет как заблокированный. Имя не обязано существовать — добавим тихо (admin может настроить позднее). */
+    public void lockTradeSet(String name) {
+        if (name != null && !name.isEmpty()) lockedTradeSets.add(name);
+    }
+
+    /** Снимает блокировку с сета. @return true если был locked, false иначе. */
+    public boolean unlockTradeSet(String name) {
+        return name != null && lockedTradeSets.remove(name);
+    }
+
+    /** Read-only snapshot для UI / сетевой передачи. */
+    public java.util.Set<String> getLockedTradeSets() {
+        return java.util.Collections.unmodifiableSet(lockedTradeSets);
+    }
+
+    /**
+     * Заменяет всё множество заблокированных имён. Очищает имена, которых нет среди {@link #tradeSets}
+     * (защита от утечки удалённых сетов). Вызывается из {@code UpdateTradeOffersPacket.handle}.
+     */
+    public void setLockedTradeSets(java.util.Collection<String> names) {
+        lockedTradeSets.clear();
+        if (names == null) return;
+        java.util.Set<String> known = new java.util.HashSet<>();
+        for (TradeSet ts : tradeSets) known.add(ts.name);
+        for (String n : names) {
+            if (n != null && !n.isEmpty() && known.contains(n)) lockedTradeSets.add(n);
+        }
+    }
+
     // -------------------------------------------------------------------------
     // Расписание
     // -------------------------------------------------------------------------
@@ -641,10 +689,11 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity, Merchant
             }
             if (setName != null && !setName.isEmpty()) {
                 TradeSet s = getTradeSetByName(setName);
-                if (s != null) return s.offers;
+                if (s != null) return s.offers; // Schedule-pick honoured даже если сет locked (admin сам выбрал)
             }
         }
-        TradeSet first = getFirstTradeSet();
+        // Stage 6 (v2.9.5): fallback skip'ает locked сеты
+        TradeSet first = getFirstUnlockedTradeSet();
         return first != null ? first.offers : new ListTag();
     }
 
@@ -1155,6 +1204,15 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity, Merchant
             tag.put("TradeSets", setsTag);
         }
 
+        // Stage 6 (v2.9.5): сохраняем locked сеты только если непусто (backward compat)
+        if (!lockedTradeSets.isEmpty()) {
+            ListTag lockedTag = new ListTag();
+            for (String name : lockedTradeSets) {
+                lockedTag.add(net.minecraft.nbt.StringTag.valueOf(name));
+            }
+            tag.put("LockedTradeSets", lockedTag);
+        }
+
         // Расписание
         tag.putBoolean("ScheduleEnabled", scheduleEnabled);
         if (!schedule.isEmpty()) {
@@ -1244,6 +1302,18 @@ public class QuestNPCEntity extends PathfinderMob implements GeoEntity, Merchant
         }
         if (tradeSets.isEmpty()) {
             tradeSets.add(new TradeSet(DEFAULT_TRADE_SET_NAME, new ListTag()));
+        }
+
+        // Stage 6 (v2.9.5): загружаем locked сеты (после tradeSets, чтобы фильтровать orphaned имена)
+        lockedTradeSets.clear();
+        if (tag.contains("LockedTradeSets", Tag.TAG_LIST)) {
+            ListTag lockedTag = tag.getList("LockedTradeSets", Tag.TAG_STRING);
+            java.util.Set<String> knownNames = new java.util.HashSet<>();
+            for (TradeSet ts : tradeSets) knownNames.add(ts.name);
+            for (int i = 0; i < lockedTag.size(); i++) {
+                String n = lockedTag.getString(i);
+                if (!n.isEmpty() && knownNames.contains(n)) lockedTradeSets.add(n);
+            }
         }
 
         // Расписание

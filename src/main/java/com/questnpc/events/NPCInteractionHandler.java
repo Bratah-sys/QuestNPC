@@ -69,6 +69,7 @@ public class NPCInteractionHandler {
                         npc.getPatrolDelayMin(), npc.getPatrolDelayMax(),
                         npc.getModelEntityType(),
                         npc.getTradingEnabled(), npc.getTradeSets(),
+                        new java.util.ArrayList<>(npc.getLockedTradeSets()), // v2.9.5
                         npc.isScheduleEnabled(), scheduleTags,
                         npc.copyEquipmentSnapshot(),
                         npc.isQuestsEnabled(), npc.getQuests())

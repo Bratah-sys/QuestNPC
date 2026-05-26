@@ -27,21 +27,50 @@ public class UpdateTradeOffersPacket {
 
     private final int entityId;
     private final List<QuestNPCEntity.TradeSet> sets;
+    /** Stage 6 (v2.9.5): имена сетов помеченных «заблокированы изначально». Параллельно sets. */
+    private final List<String> lockedNames;
 
     public UpdateTradeOffersPacket(int entityId, List<QuestNPCEntity.TradeSet> sets) {
+        this(entityId, sets, new ArrayList<>());
+    }
+
+    public UpdateTradeOffersPacket(int entityId, List<QuestNPCEntity.TradeSet> sets, List<String> lockedNames) {
         this.entityId = entityId;
         this.sets = sets != null ? sets : new ArrayList<>();
+        this.lockedNames = lockedNames != null ? lockedNames : new ArrayList<>();
     }
 
     public static void encode(UpdateTradeOffersPacket packet, FriendlyByteBuf buf) {
         buf.writeVarInt(packet.entityId);
         writeTradeSets(buf, packet.sets);
+        writeLockedNames(buf, packet.lockedNames);
     }
 
     public static UpdateTradeOffersPacket decode(FriendlyByteBuf buf) {
         int entityId = buf.readVarInt();
         List<QuestNPCEntity.TradeSet> sets = readTradeSets(buf);
-        return new UpdateTradeOffersPacket(entityId, sets);
+        List<String> lockedNames = readLockedNames(buf);
+        return new UpdateTradeOffersPacket(entityId, sets, lockedNames);
+    }
+
+    /**
+     * Stage 6 (v2.9.5): сериализует список имён заблокированных сетов.
+     * Используется в этом пакете и в {@link OpenNPCMenuPacket} (S→C снимок).
+     */
+    public static void writeLockedNames(FriendlyByteBuf buf, List<String> names) {
+        int n = Math.min(names != null ? names.size() : 0, QuestNPCEntity.MAX_TRADE_SETS);
+        buf.writeVarInt(n);
+        for (int i = 0; i < n; i++) {
+            String s = names.get(i);
+            buf.writeUtf(s == null ? "" : s, MAX_NAME_LEN);
+        }
+    }
+
+    public static List<String> readLockedNames(FriendlyByteBuf buf) {
+        int n = Math.min(buf.readVarInt(), QuestNPCEntity.MAX_TRADE_SETS);
+        List<String> out = new ArrayList<>(n);
+        for (int i = 0; i < n; i++) out.add(buf.readUtf(MAX_NAME_LEN));
+        return out;
     }
 
     /**
@@ -119,8 +148,11 @@ public class UpdateTradeOffersPacket {
             }
 
             npc.setTradeSets(validated);
-            QuestNPCLogger.info("Игрок {} обновил {} наборов ({} сделок) для NPC {}",
-                    player.getName().getString(), validated.size(), totalOffers, packet.entityId);
+            // Stage 6 (v2.9.5): apply locked names ПОСЛЕ setTradeSets (метод фильтрует orphaned имена)
+            npc.setLockedTradeSets(packet.lockedNames);
+            QuestNPCLogger.info("Игрок {} обновил {} наборов ({} сделок, {} locked) для NPC {}",
+                    player.getName().getString(), validated.size(), totalOffers,
+                    npc.getLockedTradeSets().size(), packet.entityId);
         });
         ctx.get().setPacketHandled(true);
     }

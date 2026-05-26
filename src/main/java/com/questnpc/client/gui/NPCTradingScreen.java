@@ -75,6 +75,13 @@ public class NPCTradingScreen extends Screen {
      */
     private final List<String> setNames = new ArrayList<>();
 
+    /**
+     * Stage 6 (v2.9.5): per-set «заблокирован изначально» флаги.
+     * Параллельно {@link #setNames} (по индексу). По умолчанию false (unlocked).
+     * При Apply отправляется в сервер через {@code UpdateTradeOffersPacket.lockedNames}.
+     */
+    private final List<Boolean> setLockedFlags = new ArrayList<>();
+
     /** Буферы сделок по каждому набору. Индексы совпадают с {@link #setNames}. */
     private final List<List<OfferData>> setDrafts = new ArrayList<>();
 
@@ -144,12 +151,21 @@ public class NPCTradingScreen extends Screen {
 
     public NPCTradingScreen(QuestNPCEntity npc, boolean tradingEnabled,
                             List<QuestNPCEntity.TradeSet> tradeSets,
+                            List<String> lockedTradeSetNames,
                             Screen parentScreen) {
         super(Component.translatable("gui.questnpc.trading.title"));
         this.npc = npc;
         this.tradingEnabled = tradingEnabled;
         this.parentScreen = parentScreen;
         loadSets(tradeSets);
+        loadLocked(lockedTradeSetNames);
+    }
+
+    /** Stage 6 (v2.9.5): backward-compat overload (legacy callers без lockedTradeSetNames). */
+    public NPCTradingScreen(QuestNPCEntity npc, boolean tradingEnabled,
+                            List<QuestNPCEntity.TradeSet> tradeSets,
+                            Screen parentScreen) {
+        this(npc, tradingEnabled, tradeSets, new ArrayList<>(), parentScreen);
     }
 
     // ─── NBT helpers ─────────────────────────────────────────────────────
@@ -171,6 +187,16 @@ public class NPCTradingScreen extends Screen {
         }
         activeSetIndex = 0;
         offers = setDrafts.get(0);
+    }
+
+    /** Stage 6 (v2.9.5): инициализирует {@link #setLockedFlags} параллельно {@link #setNames}. */
+    private void loadLocked(@Nullable List<String> lockedNames) {
+        setLockedFlags.clear();
+        java.util.Set<String> lockedSet = new java.util.HashSet<>();
+        if (lockedNames != null) lockedSet.addAll(lockedNames);
+        for (String name : setNames) {
+            setLockedFlags.add(lockedSet.contains(name));
+        }
     }
 
     private void setActiveSetIndex(int idx) {
@@ -522,22 +548,24 @@ public class NPCTradingScreen extends Screen {
         commitNameEdit();
 
         List<QuestNPCEntity.TradeSet> payload = new ArrayList<>();
+        List<String> lockedNames = new ArrayList<>(); // v2.9.5
         for (int i = 0; i < setNames.size() && i < QuestNPCEntity.MAX_TRADE_SETS; i++) {
             String name = setNames.get(i);
             if (name == null || name.isEmpty()) name = QuestNPCEntity.DEFAULT_TRADE_SET_NAME;
             ListTag listTag = buildOffersTag(setDrafts.get(i));
             payload.add(new QuestNPCEntity.TradeSet(name, listTag));
+            if (i < setLockedFlags.size() && setLockedFlags.get(i)) lockedNames.add(name);
         }
 
         ModNetwork.INSTANCE.sendToServer(
                 new UpdateTradingEnabledPacket(npc.getId(), tradingEnabled));
         ModNetwork.INSTANCE.sendToServer(
-                new UpdateTradeOffersPacket(npc.getId(), payload));
+                new UpdateTradeOffersPacket(npc.getId(), payload, lockedNames));
 
         // Обновляем кэш родительского экрана — иначе повторный вход в Trading
         // покажет устаревший снапшот из OpenNPCMenuPacket (баг v2.5.0).
         if (parentScreen instanceof NPCMenuScreen parentMenu) {
-            parentMenu.updateTradingState(tradingEnabled, payload);
+            parentMenu.updateTradingState(tradingEnabled, payload, lockedNames);
         }
 
         Minecraft.getInstance().setScreen(parentScreen);
@@ -556,6 +584,7 @@ public class NPCTradingScreen extends Screen {
         }
         setNames.add(candidate);
         setDrafts.add(new ArrayList<>());
+        setLockedFlags.add(false); // v2.9.5: новый сет unlocked по умолчанию
         setActiveSetIndex(setNames.size() - 1);
     }
 
@@ -564,6 +593,7 @@ public class NPCTradingScreen extends Screen {
         if (index < 0 || index >= setNames.size()) return;
         setNames.remove(index);
         setDrafts.remove(index);
+        if (index < setLockedFlags.size()) setLockedFlags.remove(index); // v2.9.5: keep parallel
         deleteConfirmSetIndex = -1;
         int newActive = Math.max(0, Math.min(activeSetIndex, setNames.size() - 1));
         setActiveSetIndex(newActive);
@@ -758,7 +788,8 @@ public class NPCTradingScreen extends Screen {
         for (int i = 0; i < setNames.size(); i++) {
             String name = setNames.get(i);
             int textW = this.font.width(name);
-            int iconsW = TAB_ICON_W * 2 + 2; // ✎ + ×
+            // v2.9.5: три icon'а — lock/unlock (L/U) + ✎ + ×
+            int iconsW = TAB_ICON_W * 3 + 4;
             int w = TAB_PAD_X * 2 + textW + iconsW + 4;
             tabX[i] = x;
             tabW[i] = w;
@@ -786,8 +817,19 @@ public class NPCTradingScreen extends Screen {
             }
 
             // ✎ и × иконки
-            int pencilX = x + w - TAB_PAD_X - TAB_ICON_W * 2 - 2;
+            // v2.9.5: \u0442\u0440\u0438 icon'\u0430 \u0441\u043F\u0440\u0430\u0432\u0430 \u043D\u0430\u043B\u0435\u0432\u043E \u2014 lock(L/U), pencil, close
             int closeX  = x + w - TAB_PAD_X - TAB_ICON_W;
+            int pencilX = closeX - TAB_ICON_W - 2;
+            int lockX   = pencilX - TAB_ICON_W - 2;
+
+            // Lock toggle: L (locked, \u043A\u0440\u0430\u0441\u043D\u044B\u0439) \u0438\u043B\u0438 U (unlocked, \u0431\u0438\u0440\u044E\u0437\u043E\u0432\u044B\u0439).
+            // \u042D\u043C\u043E\u0434\u0437\u0438 lock/unlock \u043D\u0435 \u0440\u0435\u043D\u0434\u0435\u0440\u044F\u0442\u0441\u044F \u0432\u0430\u043D\u0438\u043B\u044C\u043D\u044B\u043C MC-font \u2014 fallback \u043D\u0430 ASCII \u0431\u0443\u043A\u0432\u044B.
+            boolean isLocked = (i < setLockedFlags.size()) && setLockedFlags.get(i);
+            String lockGlyph = isLocked ? "L" : "U";
+            int lockColor = isLocked
+                    ? (NPCMenuScreen.TEXT_RED & 0x00FFFFFF)
+                    : (NPCMenuScreen.TEXT_CYAN & 0x00FFFFFF);
+            g.drawString(this.font, lockGlyph, lockX, stripY + 4, lockColor, false);
 
             int pencilColor = (NPCMenuScreen.TEXT_GRAY & 0x00FFFFFF);
             g.drawString(this.font, "\u270E", pencilX, stripY + 4, pencilColor, false);
@@ -832,8 +874,10 @@ public class NPCTradingScreen extends Screen {
                 int w = tabW[i];
                 if (mouseX < x || mouseX >= x + w) continue;
 
-                int pencilLeft = x + w - TAB_PAD_X - TAB_ICON_W * 2 - 2;
+                // v2.9.5: 3 icon'а — close, pencil, lock (справа налево)
                 int closeLeft  = x + w - TAB_PAD_X - TAB_ICON_W;
+                int pencilLeft = closeLeft - TAB_ICON_W - 2;
+                int lockLeft   = pencilLeft - TAB_ICON_W - 2;
 
                 if (mouseX >= closeLeft) {
                     if (setNames.size() <= 1) return true;
@@ -846,6 +890,12 @@ public class NPCTradingScreen extends Screen {
                 }
                 if (mouseX >= pencilLeft) {
                     beginRename(i);
+                    return true;
+                }
+                if (mouseX >= lockLeft) {
+                    // v2.9.5: toggle lock flag
+                    while (setLockedFlags.size() < setNames.size()) setLockedFlags.add(false);
+                    setLockedFlags.set(i, !setLockedFlags.get(i));
                     return true;
                 }
                 // Клик на имя → переключение

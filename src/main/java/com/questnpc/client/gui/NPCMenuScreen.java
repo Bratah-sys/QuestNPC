@@ -69,6 +69,7 @@ public class NPCMenuScreen extends Screen {
     private final String currentModelType;
     private boolean currentTradingEnabled;
     private List<QuestNPCEntity.TradeSet> currentTradeSets;
+    private List<String> currentLockedTradeSets; // v2.9.5 — снимок имён заблокированных сетов
     private boolean currentScheduleEnabled;
     private List<CompoundTag> currentSchedule;
     private net.minecraft.world.item.ItemStack[] currentEquipment; // v2.8.0 снимок брони с сервера
@@ -94,6 +95,7 @@ public class NPCMenuScreen extends Screen {
 
     public NPCMenuScreen(QuestNPCEntity npc, double speed, int delayMin, int delayMax, String modelType,
                          boolean tradingEnabled, List<QuestNPCEntity.TradeSet> tradeSets,
+                         List<String> lockedTradeSetNames,
                          boolean scheduleEnabled, List<CompoundTag> schedule,
                          net.minecraft.world.item.ItemStack[] equipment,
                          boolean questsEnabled, List<QuestDefinition> quests) {
@@ -105,6 +107,7 @@ public class NPCMenuScreen extends Screen {
         this.currentModelType = modelType != null ? modelType : "";
         this.currentTradingEnabled = tradingEnabled;
         this.currentTradeSets = tradeSets != null ? tradeSets : new ArrayList<>();
+        this.currentLockedTradeSets = lockedTradeSetNames != null ? new ArrayList<>(lockedTradeSetNames) : new ArrayList<>();
         this.currentScheduleEnabled = scheduleEnabled;
         this.currentSchedule = schedule != null ? schedule : new ArrayList<>();
         if (equipment != null && equipment.length == QuestNPCEntity.EQUIPMENT_SLOTS) {
@@ -222,7 +225,8 @@ public class NPCMenuScreen extends Screen {
                     action = button -> {
                         navigatingToSubScreen = true;
                         Minecraft.getInstance().setScreen(
-                            new NPCTradingScreen(npc, currentTradingEnabled, currentTradeSets, this));
+                            new NPCTradingScreen(npc, currentTradingEnabled, currentTradeSets,
+                                    currentLockedTradeSets, this));
                     };
                 } else if (key.equals("gui.questnpc.menu.btn.actions")) {
                     action = button -> {
@@ -599,8 +603,16 @@ public class NPCMenuScreen extends Screen {
      * через разделяемую ссылку.
      */
     void updateTradingState(boolean enabled, List<QuestNPCEntity.TradeSet> sets) {
+        updateTradingState(enabled, sets, null);
+    }
+
+    /** Stage 6 (v2.9.5) overload — также сохраняет снимок имён locked сетов для последующего reopen NPCTradingScreen. */
+    void updateTradingState(boolean enabled, List<QuestNPCEntity.TradeSet> sets, List<String> lockedNames) {
         this.currentTradingEnabled = enabled;
         this.currentTradeSets = sets != null ? new ArrayList<>(sets) : new ArrayList<>();
+        if (lockedNames != null) {
+            this.currentLockedTradeSets = new ArrayList<>(lockedNames);
+        }
     }
 
     /**
